@@ -12,6 +12,7 @@ Step 2（本檔目前實作）：backfill_transfers()
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -24,8 +25,33 @@ import ledger  # noqa: E402
 DATA = ROOT / "data"
 ONCHAIN_DB = DATA / "onchain_pulls.db"
 LIVE_DB = DATA / "live_pool.db"
+COLLECTIQ_DB = DATA / "collectiq.db"
 
 ZERO = "0x0000000000000000000000000000000000000000"
+
+# 已知基礎設施 / 池地址標籤（小寫）
+KNOWN_LABELS = {
+    "0xb95f8867ff54fd16342cb414c0f57237be7dc512": ("central_minter", 1),
+    "0x341edb3edc1e45612e5704f29ec8d26fbb4072b4": ("relay", 1),
+    "0x478e0a8304ea430187fa9c085a139599af2e03b1": ("operator", 0),
+    "0xcf20276612cd67d2db0726120ee6161fef498e17": ("operator", 0),
+    "0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910": ("pool:omega", 1),
+    "0xfda4a907d23d9f24271bc47483c5b983831e325e": ("pool:eden", 1),
+    "0xb2891022648c5fad3721c42c05d8d283d4d53080": ("pool:renacrypt", 1),
+    "0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a": ("pool:legacy", 1),
+    ZERO: ("zero", 1),
+}
+
+
+def _serial_num(serial: str | None) -> int | None:
+    """從序號字串解析數字（支援 '#12/100' 與 'BGS0015525430' 等）。"""
+    if not serial:
+        return None
+    for part in serial.replace("#", " ").replace("/", " ").split():
+        if part.isdigit():
+            return int(part)
+    m = re.search(r"(\d+)$", serial)  # 退而求其次：取末尾連續數字
+    return int(m.group(1)) if m else None
 
 
 def _iso(ts) -> str | None:
@@ -99,6 +125,82 @@ def backfill_transfers(core: sqlite3.Connection) -> dict:
     return stats
 
 
+def backfill_dims(core: sqlite3.Connection) -> dict:
+    """回填 dim_card / dim_wallet（導出維度，全量 REPLACE 重建，冪等）。"""
+    now = datetime.now(timezone.utc).isoformat()
+    card: dict[str, dict] = {}
+
+    # --- dim_card：collectiq（豐富靜態屬性）為底 ---
+    if COLLECTIQ_DB.exists():
+        src = sqlite3.connect(str(COLLECTIQ_DB))
+        for (tid, name, set_name, cnum, cname, serial, grader, grade, img) in src.execute(
+                "SELECT token_id,name,set_name,card_number,character_name,serial,"
+                "grader,grade,image_url FROM tokens"):
+            card[str(tid)] = {
+                "name": name, "set_name": set_name, "card_number": cnum,
+                "character_name": cname, "serial": serial,
+                "serial_num": _serial_num(serial), "grader": grader,
+                "grade": grade, "tier": None, "image_url": img,
+            }
+        src.close()
+
+    # --- dim_card：live_pool.tokens 補 tier，並加入池內獨有卡 ---
+    if LIVE_DB.exists():
+        src = sqlite3.connect(str(LIVE_DB))
+        for (tid, cardname, tier) in src.execute(
+                "SELECT token_id,card_name,tier FROM tokens"):
+            tid = str(tid)
+            if tid in card:
+                if tier:
+                    card[tid]["tier"] = tier
+            else:
+                card[tid] = {
+                    "name": cardname, "set_name": None, "card_number": None,
+                    "character_name": None, "serial": None, "serial_num": None,
+                    "grader": None, "grade": None, "tier": tier, "image_url": None,
+                }
+        src.close()
+
+    payload = [
+        (tid, d["name"], d["set_name"], d["card_number"], d["character_name"],
+         None, d["serial"], d["serial_num"], d["grader"], d["grade"],
+         d["tier"], d["image_url"], None, now)
+        for tid, d in card.items()
+    ]
+    core.executemany(
+        "INSERT OR REPLACE INTO dim_card"
+        "(token_id,name,set_name,card_number,character_name,character_family,"
+        " serial,serial_num,grader,grade,tier,image_url,image_local,updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", payload)
+    core.commit()
+
+    # --- dim_wallet：live_pool.wallets + 已知標籤 ---
+    wallets: dict[str, dict] = {}
+    if LIVE_DB.exists():
+        src = sqlite3.connect(str(LIVE_DB))
+        for (addr, is_c, fsb, fst) in src.execute(
+                "SELECT address,is_contract,first_seen_block,first_seen_time FROM wallets"):
+            a = (addr or "").lower()
+            wallets[a] = {"is_contract": is_c or 0, "label": None,
+                          "first_seen_block": fsb, "first_seen_time": fst}
+        src.close()
+    for addr, (label, is_c) in KNOWN_LABELS.items():
+        w = wallets.setdefault(addr, {"is_contract": is_c, "label": None,
+                                      "first_seen_block": None, "first_seen_time": None})
+        w["label"] = label
+        w["is_contract"] = is_c
+    wpayload = [
+        (a, w["is_contract"], w["label"], w["first_seen_block"], w["first_seen_time"])
+        for a, w in wallets.items()
+    ]
+    core.executemany(
+        "INSERT OR REPLACE INTO dim_wallet"
+        "(address,is_contract,label,first_seen_block,first_seen_time) "
+        "VALUES(?,?,?,?,?)", wpayload)
+    core.commit()
+    return {"cards": len(payload), "wallets": len(wpayload)}
+
+
 def main() -> int:
     core = ledger.init_db()
     print("[migrate] backfill_transfers ...")
@@ -115,6 +217,13 @@ def main() -> int:
     print(f"[migrate] 新增 live={st['from_live']} onchain={st['from_onchain']}")
     print(f"[migrate] ledger_transfers 總計 {total}（含 pool 脈絡 {with_pool}）")
     print(f"[migrate] kind 分布: {kinds}")
+
+    print("[migrate] backfill_dims ...")
+    ds = backfill_dims(core)
+    core.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('dims_backfilled_at',?)",
+                 (datetime.now(timezone.utc).isoformat(),))
+    core.commit()
+    print(f"[migrate] dim_card={ds['cards']} dim_wallet={ds['wallets']}")
     return 0
 
 
