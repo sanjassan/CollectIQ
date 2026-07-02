@@ -201,6 +201,56 @@ def backfill_dims(core: sqlite3.Connection) -> dict:
     return {"cards": len(payload), "wallets": len(wpayload)}
 
 
+def backfill_holdings(core: sqlite3.Connection) -> dict:
+    """由 ledger_transfers 摺疊導出 fact_holding（每 token 取最新一筆 transfer）。
+
+    掛牌狀態暫用 collectiq 快照；日後 ledger_market 建好後改由市場事件摺疊。
+    """
+    # 池地址集合（供 in_pool 判定）
+    pools = {a for (a,) in core.execute(
+        "SELECT address FROM dim_wallet WHERE label LIKE 'pool:%'").fetchall()}
+
+    # 每 token 的最新一筆 transfer（block, log_index 排序）
+    latest = core.execute("""
+        WITH ranked AS (
+            SELECT token_id, to_addr, pool, block_number, block_time, kind,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY token_id
+                       ORDER BY block_number DESC, log_index DESC) rn
+            FROM ledger_transfers)
+        SELECT token_id, to_addr, pool, block_number, block_time, kind
+        FROM ranked WHERE rn = 1
+    """).fetchall()
+
+    # 掛牌快照（collectiq 現況）
+    listed: dict[str, tuple] = {}
+    if COLLECTIQ_DB.exists():
+        src = sqlite3.connect(str(COLLECTIQ_DB))
+        for (tid, il, ap) in src.execute(
+                "SELECT token_id,is_listed,ask_price FROM tokens"):
+            listed[str(tid)] = (il or 0, ap)
+        src.close()
+
+    payload = []
+    for (tid, to_addr, pool, blk, btime, kind) in latest:
+        to_l = (to_addr or "").lower()
+        if to_l == ZERO:
+            status, holder, cur_pool = "burned", None, None
+        elif to_l in pools:
+            status, holder, cur_pool = "in_pool", None, to_l
+        else:
+            status, holder, cur_pool = "held", to_l, pool
+        il, ap = listed.get(str(tid), (0, None))
+        payload.append((str(tid), holder, status, cur_pool, il, ap, blk, btime))
+
+    core.executemany(
+        "INSERT OR REPLACE INTO fact_holding"
+        "(token_id,current_holder,status,pool,is_listed,ask_price,last_block,last_time) "
+        "VALUES(?,?,?,?,?,?,?,?)", payload)
+    core.commit()
+    return {"holdings": len(payload)}
+
+
 def main() -> int:
     core = ledger.init_db()
     print("[migrate] backfill_transfers ...")
@@ -224,6 +274,16 @@ def main() -> int:
                  (datetime.now(timezone.utc).isoformat(),))
     core.commit()
     print(f"[migrate] dim_card={ds['cards']} dim_wallet={ds['wallets']}")
+
+    print("[migrate] backfill_holdings ...")
+    hs = backfill_holdings(core)
+    core.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('holdings_backfilled_at',?)",
+                 (datetime.now(timezone.utc).isoformat(),))
+    core.commit()
+    st_dist = core.execute(
+        "SELECT status, COUNT(*) FROM fact_holding GROUP BY status "
+        "ORDER BY 2 DESC").fetchall()
+    print(f"[migrate] fact_holding={hs['holdings']} 狀態分布: {st_dist}")
     return 0
 
 
