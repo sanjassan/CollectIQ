@@ -305,13 +305,16 @@ def _seed_from_onchain_db(conn: sqlite3.Connection, pool: str) -> int:
     return max((r[5] for r in rows), default=0)
 
 
-def _classify(pool: str, frm: str, to: str) -> str:
+def _classify(pool: str, frm: str, to: str, prev_status: str | None = None) -> str:
     # 灌卡進池：從 0x0 鑄造，或由中央鑄造/中繼合約路由進來
     if to == pool and frm in INFRA_ADDRS:
         return "load"
-    # 回收回池：由「真實買家錢包」送回（被抽走後又送回獎池）
     if to == pool and frm not in INFRA_ADDRS:
-        return "recycle"
+        # 送回池的卡有兩種語意，靠這張卡「先前是否曾從本池被抽走」區分：
+        #   prev_status=='pulled' → 真回收（被抽走後又送回）
+        #   否則                  → 賣家新上架的存貨（永續池常見）→ 視為 load
+        # 沒有前一狀態就無法判定為回收，保守當 load，避免灌爆 recycle 計數。
+        return "recycle" if prev_status == "pulled" else "load"
     if frm == pool and to == ZERO:
         return "burn"          # 從池內銷毀
     if frm == pool and to not in (ZERO,):
@@ -319,8 +322,15 @@ def _classify(pool: str, frm: str, to: str) -> str:
     return "other"
 
 
-def _apply_event(conn, pool, bn, li, bt, tid, frm, to, tx, name, fmv):
-    kind = _classify(pool, frm, to)
+def _prev_status(conn, pool: str, tid: str) -> str | None:
+    row = conn.execute(
+        "SELECT status FROM tokens WHERE pool=? AND token_id=?", (pool, tid)).fetchone()
+    return row[0] if row else None
+
+
+def _apply_event(conn, pool, bn, li, bt, tid, frm, to, tx, name, fmv, kind=None):
+    if kind is None:
+        kind = _classify(pool, frm, to, _prev_status(conn, pool, tid))
     if kind == "other":
         return
     conn.execute(
@@ -393,15 +403,16 @@ def scan_forward(conn, rpcs, pool: str, from_block: int, market: dict) -> int:
                 mk = market.get(tid) or {}
                 txh = lg["transactionHash"].hex()
                 txh = txh if txh.startswith("0x") else "0x" + txh
+                # 用 token 前一狀態分類一次，供核心帳本與 live 投影共用
+                k = _classify(pool, frm, to, _prev_status(conn, pool, tid))
                 # RAW 核心帳本：全記錄每筆 Transfer（含 reorg 未定案旗標）
                 if _CORE is not None:
-                    k = _classify(pool, frm, to)
                     _ledger.ingest_transfer(
                         _CORE, txh, lg["logIndex"], bn, _iso(block_ts[bn]),
                         tid, frm, to, pool,
                         k if k != "other" else _ledger.KIND_XFER, latest)
                 _apply_event(conn, pool, bn, lg["logIndex"], block_ts[bn], tid, frm, to,
-                             txh, mk.get("name"), mk.get("fmv"))
+                             txh, mk.get("name"), mk.get("fmv"), kind=k)
                 new_ev += 1
             cur = end + 1
             time.sleep(0.15)
