@@ -184,6 +184,41 @@ CREATE TABLE IF NOT EXISTS enrich_queue (
 );
 CREATE INDEX IF NOT EXISTS idx_eq_pending ON enrich_queue(done, priority DESC);
 
+-- 卡機內容目錄（開抽前預覽）：卡池「宣稱」裝了哪些卡。
+-- 來源：Renaiss tRPC cardPack.getContent（packId + tiers）。
+-- 這是「上鏈前」就能拿到的全池清單：countdown 階段卡片只有 Renaiss 內部
+-- item_id（UUID），還沒 mint 成鏈上 token_id。開抽後才由鏈上灌卡回填 token_id。
+-- 主鍵 (pack_id, item_id) → 冪等；刷新只更新目錄欄位，不清掉已補的市價/token_id。
+-- 註：getContent 回的是「卡池組成」——每個抽卡槽一列（entry_id 唯一）。同一張
+-- 實體卡（item_id / cert）可能佔多槽（低階常見卡以重複表示中獎權重）。故主鍵用
+-- entry_id（保全部槽位，供加權 EV）；用 DISTINCT cert 去重後才對市場（省額度）。
+CREATE TABLE IF NOT EXISTS pack_content (
+    pack_id             TEXT NOT NULL,   -- Renaiss cardPack UUID
+    entry_id            TEXT NOT NULL,   -- 抽卡槽 UUID（getContent card.id，唯一）
+    item_id             TEXT,            -- 實體卡 UUID（可跨槽重複；尚未上鏈）
+    pack_name           TEXT,
+    pack_stage          TEXT,            -- countdown/active/archived
+    tier                TEXT,            -- TOP/S/A/B/C/D
+    name                TEXT,
+    cert                TEXT,            -- 從圖片 URL 解析的鑑定證號（對真實市場的萬用鍵）
+    grader              TEXT,
+    grade               TEXT,
+    year                INTEGER,
+    image_url           TEXT,
+    renaiss_buyback_usd REAL,            -- 官方買回基準價（= Renaiss FMV）
+    market_price_usd    REAL,            -- 真實市場價（後續分批補；可為 NULL）
+    luck_value          REAL,            -- market / renaiss（>1.5 = 藏寶卡）
+    token_id            TEXT,            -- 開抽上鏈後解析回填（可為 NULL）
+    captured_at         TEXT,
+    updated_at          TEXT,
+    PRIMARY KEY (pack_id, entry_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pc_pack  ON pack_content(pack_id, tier);
+CREATE INDEX IF NOT EXISTS idx_pc_cert  ON pack_content(cert);
+CREATE INDEX IF NOT EXISTS idx_pc_item  ON pack_content(item_id);
+CREATE INDEX IF NOT EXISTS idx_pc_token ON pack_content(token_id);
+CREATE INDEX IF NOT EXISTS idx_pc_luck  ON pack_content(luck_value);
+
 -- 遷移 / 掃描狀態鍵值。
 CREATE TABLE IF NOT EXISTS meta (
     k TEXT PRIMARY KEY,
@@ -245,7 +280,8 @@ def init_db(path: Path | str = CORE_DB) -> sqlite3.Connection:
 EXPECTED_TABLES = {
     "ledger_transfers", "ledger_market", "sbt_awards",
     "dim_card", "dim_wallet", "fact_holding", "fmv_snapshots",
-    "pool_ev_timeseries", "reward_status", "enrich_queue", "meta",
+    "pool_ev_timeseries", "reward_status", "enrich_queue",
+    "pack_content", "meta",
 }
 
 
