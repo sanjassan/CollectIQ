@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>價格驗證 — CollectIQ</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+           margin: 0; background: #0d1117; color: #e6edf3; }
+    header { padding: 20px 28px; background: #161b22; border-bottom: 1px solid #30363d;
+             display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand h1 { margin: 0; font-size: 22px; font-weight: 800; }
+    .brand .logo { font-size: 26px; }
+    .brand .tagline { color: #8b949e; font-size: 12px; margin-top: 2px; }
+    nav { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+    nav a { color: #c9d1d9; text-decoration: none; font-size: 13px; padding: 5px 12px;
+            border-radius: 6px; border: 1px solid transparent; transition: all .15s; }
+    nav a:hover { background: #21262d; border-color: #30363d; }
+    nav a.active { background: #1f6feb22; border-color: #1f6feb; color: #58a6ff; }
+
+    main { padding: 20px 28px; max-width: 1400px; margin: 0 auto; }
+    a { color: #58a6ff; text-decoration: none; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #21262d; vertical-align: middle; }
+    th { color: #8b949e; font-weight: 600; cursor: pointer; user-select: none; font-size: 11px;
+         text-transform: uppercase; letter-spacing: .3px; }
+    tr:hover td { background: #161b22; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .muted { color: #8b949e; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; }
+    .renaiss_high { background: #4a1f1f; color: #ff9b9b; }
+    .renaiss_low  { background: #1a4731; color: #3fb950; font-weight: 700; }
+    .match { background: #21304a; color: #9bc4ff; }
+    .unknown { background: #2d2d33; color: #8b949e; }
+    img.card { height: 38px; border-radius: 3px; vertical-align: middle; }
+    .controls { margin: 10px 0 18px; font-size: 13px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .controls button { background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;
+                       padding:5px 12px;cursor:pointer;font-size:12px;transition:all .15s; }
+    .controls button:hover { background:#30363d; }
+    .controls button.active { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+    .delta-pos { color:#3fb950; }
+    .delta-neg { color:#ff9b9b; }
+
+    .section { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+               padding: 16px 20px; margin-bottom: 20px; }
+
+    footer { text-align: center; padding: 20px; font-size: 11px; color: #484f58; border-top: 1px solid #21262d; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">🔬</span>
+      <div>
+        <h1>CollectIQ</h1>
+        <div class="tagline">RWA Price Verification Engine for Renaiss</div>
+      </div>
+    </div>
+    <nav>
+      <a href="/">總覽</a>
+      <a href="/verify" class="active">價格驗證</a>
+      <a href="/price-search">外部比價</a>
+      <a href="/intelligence">Price Intel</a>
+      <a href="/holdings">鏈上持有</a>
+      <a href="/oracle">Oracle</a>
+      <a href="/api-status">API 狀態</a>
+    </nav>
+  </header>
+  <main>
+    <div class="section" style="margin-bottom:16px;">
+      <p class="muted" style="font-size:12px;line-height:1.7;margin:0;">
+        <b>獨立驗證</b>：我們向 PriceCharting 獨立取得每張鑑定卡的公開成交價，與 Renaiss 官方 FMV 交叉驗證。<br>
+        <b>Δ%</b> = (外部市場價 − Renaiss FMV) / Renaiss FMV。
+        <span class="pill renaiss_low">🥚 低估</span> 外面更貴（彩蛋機會）·
+        <span class="pill renaiss_high">偏高</span> 外面更便宜 ·
+        <span class="pill match">✅ 相符</span> ±10% 以內。
+      </p>
+    </div>
+    <div class="sub muted" id="meta" style="font-size:12px;margin-bottom:10px;">載入中…</div>
+    <div class="controls">
+      <button data-flag="" class="active">全部</button>
+      <button data-flag="renaiss_low">🥚 低估（彩蛋）</button>
+      <button data-flag="renaiss_high">⚠️ 偏高</button>
+      <button data-flag="match">✅ 相符</button>
+      <button data-flag="unknown">未驗證</button>
+    </div>
+
+    <!-- Grader Converter -->
+    <div class="section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <b style="font-size:14px;">🔄 鑑定商換算計算機</b>
+        <select id="cv-grade" onchange="calcConvert()" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:4px 8px;font-size:13px;">
+          <option value="10">Grade 10</option>
+          <option value="9.5">Grade 9.5</option>
+          <option value="9">Grade 9</option>
+          <option value="8">Grade 8</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <label style="flex:1;min-width:120px;font-size:12px;color:#8b949e;">PSA<br><input id="cv-psa" type="number" placeholder="$" oninput="calcFrom('psa')" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:6px 8px;font-size:14px;margin-top:3px;box-sizing:border-box;"></label>
+        <label style="flex:1;min-width:120px;font-size:12px;color:#8b949e;">CGC<br><input id="cv-cgc" type="number" placeholder="$" oninput="calcFrom('cgc')" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:6px 8px;font-size:14px;margin-top:3px;box-sizing:border-box;"></label>
+        <label style="flex:1;min-width:120px;font-size:12px;color:#8b949e;">BGS<br><input id="cv-bgs" type="number" placeholder="$" oninput="calcFrom('bgs')" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:6px 8px;font-size:14px;margin-top:3px;box-sizing:border-box;"></label>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:#8b949e;">同一張卡同分數，任一格輸入價格即時換算。係數：PSA=100%，可在 our_price.py 調整。</div>
+    </div>
+
+    <div id="table" class="muted">載入中…</div>
+  </main>
+
+  <footer>
+    CollectIQ · RWA Price Verification Engine · Built for Renaiss Hackathon 2026
+  </footer>
+
+  <script>
+    const fmt = (n) => (n === null || n === undefined || isNaN(n)) ? "—" : "$" + Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
+    const FLAG_LABEL = {renaiss_high:"⚠️ 偏高", renaiss_low:"🥚 低估", match:"✅ 相符", unknown:"— 未驗證"};
+    let allRows = [];
+
+    function render(rows) {
+      if (!rows.length) { document.getElementById("table").innerHTML = '<div class="muted">無資料</div>'; return; }
+      let h = '<table><thead><tr>'
+        + '<th>卡片</th><th>等級</th><th class="num">Renaiss FMV</th><th class="num">掛單價</th>'
+        + '<th class="num">外部驗證價</th><th class="num">Δ%</th><th>判定</th><th>來源</th>'
+        + '</tr></thead><tbody>';
+      for (const r of rows) {
+        const img = r.image_url ? `<img class="card" src="${r.image_url}" loading="lazy">` : "";
+        const nm = r.marketplace_url ? `<a href="${r.marketplace_url}" target="_blank">${r.name||"—"}</a>` : (r.name||"—");
+        const dcls = r.delta_pct == null ? "" : (r.delta_pct >= 0 ? "delta-pos" : "delta-neg");
+        const dtxt = r.delta_pct == null ? "—" : (r.delta_pct>0?"+":"") + r.delta_pct + "%";
+        const src = r.source_url ? `<a href="${r.source_url}" target="_blank">${r.source||"—"}</a>` : "—";
+        const isEgg = r.flag === 'renaiss_low' && r.delta_pct > 30;
+        h += `<tr${isEgg ? ' style="background:#0d2318"' : ''}>`
+          + `<td>${img} ${nm}</td>`
+          + `<td>${(r.grader||"")} ${(r.grade||"")}</td>`
+          + `<td class="num">${fmt(r.renaiss_fmv)}</td>`
+          + `<td class="num">${fmt(r.renaiss_ask)}</td>`
+          + `<td class="num">${fmt(r.our_price)}${r.our_grade_matched?` <span class="muted">(${r.our_grade_matched})</span>`:""}`
+          + `${r.grader_converted ? '<br><span style="color:#d29922;font-size:10px;">🔄 PSA '+fmt(r.our_price_raw)+' × '+r.grader+' 換算</span>' : ''}</td>`
+          + `<td class="num ${dcls}">${dtxt}</td>`
+          + `<td><span class="pill ${r.flag}">${FLAG_LABEL[r.flag]||r.flag}</span></td>`
+          + `<td>${src}</td>`
+          + `</tr>`;
+      }
+      document.getElementById("table").innerHTML = h + "</tbody></table>";
+    }
+
+    function applyFilter(flag) {
+      render(flag ? allRows.filter(r => r.flag === flag) : allRows);
+    }
+
+    fetch("/api/comparison").then(r => r.json()).then(d => {
+      allRows = (d.rows||[]).slice().sort((a,b) => (b.delta_pct||0) - (a.delta_pct||0));
+      const s = d.summary||{};
+      const f = s.flags||{};
+      document.getElementById("meta").textContent =
+        `${d.generated_at||""} · 共 ${s.total||0} 張 · 已驗證 ${s.with_external_price||0} 張`
+        + (d.partial ? "（部分，背景仍在跑）" : "")
+        + ` · 低估 ${f.renaiss_low||0} / 偏高 ${f.renaiss_high||0} / 相符 ${f.match||0} / 未驗證 ${f.unknown||0}`;
+      const defaultBtn = document.querySelector('[data-flag="renaiss_low"]');
+      if (defaultBtn) {
+        document.querySelectorAll(".controls button").forEach(x=>x.classList.remove("active"));
+        defaultBtn.classList.add("active");
+      }
+      render(allRows.filter(r => r.flag === 'renaiss_low'));
+    }).catch(e => { document.getElementById("table").innerHTML = '<div class="muted">載入失敗：'+e+'</div>'; });
+
+    document.querySelectorAll(".controls button").forEach(b => {
+      b.addEventListener("click", () => {
+        document.querySelectorAll(".controls button").forEach(x=>x.classList.remove("active"));
+        b.classList.add("active");
+        applyFilter(b.dataset.flag);
+      });
+    });
+
+    // ─── Grader Converter ───
+    const MULT = {
+      10:  { psa: 1.00, cgc: 0.60, bgs: 0.75 },
+      9.5: { psa: 1.00, cgc: 0.65, bgs: 0.85 },
+      9:   { psa: 1.00, cgc: 0.70, bgs: 0.80 },
+      8:   { psa: 1.00, cgc: 0.80, bgs: 0.85 },
+    };
+    let _cvSrc = 'psa';
+    function calcFrom(s) { _cvSrc = s; calcConvert(); }
+    function calcConvert() {
+      const m = MULT[parseFloat(document.getElementById('cv-grade').value)];
+      if (!m) return;
+      const v = parseFloat(document.getElementById('cv-' + _cvSrc).value);
+      if (isNaN(v) || v <= 0) return;
+      const base = v / m[_cvSrc];
+      for (const g of ['psa','cgc','bgs']) {
+        if (g !== _cvSrc) document.getElementById('cv-' + g).value = (base * m[g]).toFixed(2);
+      }
+    }
+  </script>
+</body>
+</html>

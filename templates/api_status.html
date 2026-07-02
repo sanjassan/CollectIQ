@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>API 狀態 — CollectIQ</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; background: #0d1117; color: #e6edf3; }
+    header { padding: 20px 28px; background: #161b22; border-bottom: 1px solid #30363d;
+             display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand h1 { margin: 0; font-size: 22px; font-weight: 800; }
+    .brand .logo { font-size: 26px; }
+    .brand .tagline { color: #8b949e; font-size: 12px; margin-top: 2px; }
+    nav { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+    nav a { color: #c9d1d9; text-decoration: none; font-size: 13px; padding: 5px 12px;
+            border-radius: 6px; border: 1px solid transparent; transition: all .15s; }
+    nav a:hover { background: #21262d; border-color: #30363d; }
+    nav a.active { background: #1f6feb22; border-color: #1f6feb; color: #58a6ff; }
+
+    main { padding: 24px 28px; max-width: 960px; margin: 0 auto; }
+
+    .run-btn { background: #1f6feb; color: #fff; border: none; border-radius: 6px;
+               padding: 9px 22px; font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 24px; }
+    .run-btn:hover { background: #388bfd; }
+    .run-btn:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
+
+    .section { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+               margin-bottom: 16px; overflow: hidden; }
+    .section-header { padding: 12px 18px; display: flex; align-items: center; gap: 10px;
+                       border-bottom: 1px solid #21262d; cursor: pointer; user-select: none; }
+    .section-header:hover { background: #1c2128; }
+    .badge { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 10px; }
+    .badge-ok   { background: #1a4731; color: #3fb950; }
+    .badge-err  { background: #3d1d1a; color: #f85149; }
+    .badge-wait { background: #21262d; color: #8b949e; }
+    .section-title { font-size: 14px; font-weight: 600; }
+    .section-desc  { font-size: 12px; color: #8b949e; margin-left: auto; }
+    .section-body  { padding: 14px 18px; font-size: 13px; }
+    .section-body.hidden { display: none; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { color: #8b949e; text-align: left; padding: 4px 8px; border-bottom: 1px solid #21262d;
+         font-size: 11px; text-transform: uppercase; }
+    td { padding: 6px 8px; border-bottom: 1px solid #21262d; vertical-align: top; }
+    tr:last-child td { border: none; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .tag { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px;
+           background: #1f6feb22; color: #58a6ff; }
+    .err-msg { color: #f85149; font-size: 12px; }
+    pre { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 10px;
+          font-size: 11px; overflow-x: auto; color: #c9d1d9; margin: 0; white-space: pre-wrap; }
+
+    footer { text-align: center; padding: 20px; font-size: 11px; color: #484f58; border-top: 1px solid #21262d; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo">🔬</span>
+    <div>
+      <h1>CollectIQ</h1>
+      <div class="tagline">RWA Price Verification Engine for Renaiss</div>
+    </div>
+  </div>
+  <nav>
+    <a href="/">總覽</a>
+    <a href="/verify">價格驗證</a>
+    <a href="/price-search">外部比價</a>
+    <a href="/intelligence">Price Intel</a>
+    <a href="/holdings">鏈上持有</a>
+    <a href="/oracle">Oracle</a>
+    <a href="/api-status" class="active">API 狀態</a>
+  </nav>
+</header>
+
+<main>
+  <button class="run-btn" id="run-btn" onclick="runAll()">▶ 執行全部驗證</button>
+
+  <div class="section" id="s-packs">
+    <div class="section-header" onclick="toggle('s-packs')">
+      <span class="badge badge-wait" id="b-packs">待測</span>
+      <span class="section-title">Platform API — GET /packs</span>
+      <span class="section-desc">所有卡機清單（含 EV、包價、頭獎 FMV）</span>
+    </div>
+    <div class="section-body hidden" id="body-packs"><p class="err-msg">尚未執行</p></div>
+  </div>
+
+  <div class="section" id="s-pack-detail">
+    <div class="section-header" onclick="toggle('s-pack-detail')">
+      <span class="badge badge-wait" id="b-pack-detail">待測</span>
+      <span class="section-title">Platform API — GET /packs/omega（含開包紀錄）</span>
+      <span class="section-desc">最近 30 筆開包 FMV / tier</span>
+    </div>
+    <div class="section-body hidden" id="body-pack-detail"><p class="err-msg">尚未執行</p></div>
+  </div>
+
+  <div class="section" id="s-marketplace">
+    <div class="section-header" onclick="toggle('s-marketplace')">
+      <span class="badge badge-wait" id="b-marketplace">待測</span>
+      <span class="section-title">Platform API — GET /marketplace</span>
+      <span class="section-desc">市場掛單卡片（FMV、掛單價、持有者）</span>
+    </div>
+    <div class="section-body hidden" id="body-marketplace"><p class="err-msg">尚未執行</p></div>
+  </div>
+
+  <div class="section" id="s-search">
+    <div class="section-header" onclick="toggle('s-search')">
+      <span class="badge badge-wait" id="b-search">待測</span>
+      <span class="section-title">Index API — GET /search</span>
+      <span class="section-desc">外部市場定價搜尋（100 req/day 匿名限制）</span>
+    </div>
+    <div class="section-body hidden" id="body-search"><p class="err-msg">尚未執行</p></div>
+  </div>
+
+  <div class="section" id="s-trades">
+    <div class="section-header" onclick="toggle('s-trades')">
+      <span class="badge badge-wait" id="b-trades">待測</span>
+      <span class="section-title">Index API — GET /trades/recent</span>
+      <span class="section-desc">跨平台最近成交紀錄（snkrdunk 等）</span>
+    </div>
+    <div class="section-body hidden" id="body-trades"><p class="err-msg">尚未執行</p></div>
+  </div>
+
+  <div class="section" id="s-index">
+    <div class="section-header" onclick="toggle('s-index')">
+      <span class="badge badge-wait" id="b-index">待測</span>
+      <span class="section-title">Index API — GET /indices/pokemon</span>
+      <span class="section-desc">Pokemon TCG 整體市場指數</span>
+    </div>
+    <div class="section-body hidden" id="body-index"><p class="err-msg">尚未執行</p></div>
+  </div>
+</main>
+
+<footer>
+  CollectIQ · RWA Price Verification Engine · Built for Renaiss Hackathon 2026
+</footer>
+
+<script>
+function toggle(id) {
+  const body = document.getElementById('body-' + id.replace('s-', ''));
+  body.classList.toggle('hidden');
+}
+function setBadge(key, ok) {
+  const b = document.getElementById('b-' + key);
+  b.textContent = ok ? '✅ OK' : '❌ 失敗';
+  b.className = 'badge ' + (ok ? 'badge-ok' : 'badge-err');
+}
+function setBody(key, html) {
+  const el = document.getElementById('body-' + key);
+  el.innerHTML = html;
+  el.classList.remove('hidden');
+}
+function fmtPrice(usd) {
+  return usd != null ? '$' + Number(usd).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '—';
+}
+
+async function runAll() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true; btn.textContent = '⏳ 驗證中…';
+  await Promise.all([testPacks(), testPackDetail(), testMarketplace(), testSearch(), testTrades(), testIndex()]);
+  btn.disabled = false; btn.textContent = '▶ 重新執行';
+}
+
+async function testPacks() {
+  try {
+    const r = await fetch('/api/packs/live'); const d = await r.json();
+    const packs = d.packs || [];
+    if (!packs.length) { setBadge('packs', false); setBody('packs', '<p class="err-msg">回傳空陣列</p>'); return; }
+    setBadge('packs', true);
+    const rows = packs.map(p => `<tr><td>${p.name || p.slug}</td><td><span class="tag">${p.pack_type || '—'}</span></td><td class="num">${fmtPrice(p.price_usd)}</td><td class="num">${fmtPrice(p.official_ev_usd)}</td><td class="num">${p.ev_ratio != null ? p.ev_ratio + 'x' : '—'}</td></tr>`).join('');
+    setBody('packs', `<table><thead><tr><th>卡機</th><th>類型</th><th>包價</th><th>官方 EV</th><th>EV 倍率</th></tr></thead><tbody>${rows}</tbody></table>`);
+  } catch(e) { setBadge('packs', false); setBody('packs', `<p class="err-msg">${e.message}</p>`); }
+}
+
+async function testPackDetail() {
+  try {
+    const r = await fetch('/api/packs/live/omega'); const d = await r.json();
+    const ev = d.ev || {}; const detail = d.detail || {};
+    const recent = detail.recentOpenedPacks || [];
+    setBadge('pack-detail', !!ev.slug);
+    const rows = recent.slice(0, 10).map(p => `<tr><td>${p.tier || '—'}</td><td class="num">${fmtPrice(p.fmv)}</td><td>${p.name ? p.name.slice(0,50) : '—'}</td></tr>`).join('');
+    setBody('pack-detail', `<p>empirical EV: <strong>${fmtPrice(ev.empirical_ev_usd)}</strong> | 官方 EV: <strong>${fmtPrice(ev.official_ev_usd)}</strong> | 最近 ${recent.length} 筆開包</p>
+      <table><thead><tr><th>Tier</th><th>FMV</th><th>卡名</th></tr></thead><tbody>${rows || '<tr><td colspan=3 style="color:#8b949e">無紀錄</td></tr>'}</tbody></table>`);
+  } catch(e) { setBadge('pack-detail', false); setBody('pack-detail', `<p class="err-msg">${e.message}</p>`); }
+}
+
+async function testMarketplace() {
+  try {
+    const r = await fetch('/api/marketplace?limit=10&sort=fmv'); const d = await r.json();
+    const cards = d.cards || [];
+    setBadge('marketplace', cards.length > 0);
+    const rows = cards.slice(0,10).map(c => `<tr><td>${(c.name||'').slice(0,55)}</td><td class="num">${fmtPrice(c.fmv)}</td><td class="num">${fmtPrice(c.ask_price)}</td><td>${c.gradingCompany || '—'} ${c.grade || ''}</td></tr>`).join('');
+    setBody('marketplace', `<p>共 ${d.total} 張掛單</p>
+      <table><thead><tr><th>卡名</th><th>FMV</th><th>掛單價</th><th>分級</th></tr></thead><tbody>${rows}</tbody></table>`);
+  } catch(e) { setBadge('marketplace', false); setBody('marketplace', `<p class="err-msg">${e.message}</p>`); }
+}
+
+async function testSearch() {
+  try {
+    const r = await fetch('/api/market/search?q=charizard+psa+10&limit=5'); const d = await r.json();
+    const results = d.results || [];
+    setBadge('search', results.length > 0);
+    const rows = results.map(c => `<tr><td>${(c.name||'').slice(0,45)}</td><td>${(c.setName||'').slice(0,30)}</td><td>${c.gradeLabel || '—'}</td><td class="num">${fmtPrice(c.price_usd)}</td><td>${c.confidence || '—'}</td></tr>`).join('');
+    setBody('search', `<p>查詢：<code>charizard psa 10</code>，共 ${results.length} 筆</p>
+      <table><thead><tr><th>卡名</th><th>系列</th><th>等級</th><th>外部市價</th><th>信心度</th></tr></thead><tbody>${rows || '<tr><td colspan=5 style="color:#f85149">無結果</td></tr>'}</tbody></table>`);
+  } catch(e) { setBadge('search', false); setBody('search', `<p class="err-msg">${e.message}</p>`); }
+}
+
+async function testTrades() {
+  try {
+    const r = await fetch('/api/trades/live?limit=10'); const d = await r.json();
+    const trades = d.trades || [];
+    setBadge('trades', trades.length > 0);
+    const rows = trades.slice(0,10).map(t => { const card = t.card || {};
+      return `<tr><td>${(card.name||'').slice(0,40)}</td><td>${t.gradeLabel || '—'}</td><td class="num">${fmtPrice(t.price_usd)}</td><td>${t.displayName || t.source || '—'}</td><td>${(t.observedAt||'').slice(0,10)}</td></tr>`;}).join('');
+    setBody('trades', `<p>最近 ${trades.length} 筆成交</p>
+      <table><thead><tr><th>卡名</th><th>等級</th><th>成交價</th><th>平台</th><th>日期</th></tr></thead><tbody>${rows || '<tr><td colspan=5 style="color:#8b949e">無紀錄</td></tr>'}</tbody></table>`);
+  } catch(e) { setBadge('trades', false); setBody('trades', `<p class="err-msg">${e.message}</p>`); }
+}
+
+async function testIndex() {
+  try {
+    const r = await fetch('/api/index/pokemon'); const d = await r.json();
+    setBadge('index', !!d.value);
+    setBody('index', `<pre>${JSON.stringify(d, null, 2)}</pre>`);
+  } catch(e) { setBadge('index', false); setBody('index', `<p class="err-msg">${e.message}</p>`); }
+}
+</script>
+</body>
+</html>

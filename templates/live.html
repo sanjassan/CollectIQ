@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>CollectIQ — Live Pool Tracker</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family:-apple-system,"Segoe UI","Noto Sans TC",sans-serif; margin:0; background:#0d1117; color:#e6edf3; }
+    header { padding:20px 28px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; background:#161b22; border-bottom:1px solid #30363d; }
+    h1 { margin:0; font-size:22px; font-weight:800; }
+    .sub { color:#8b949e; font-size:12px; margin-top:3px; }
+    nav a { padding:5px 12px; border-radius:6px; border:1px solid transparent; color:#58a6ff; text-decoration:none; font-size:13px; }
+    nav a:hover { text-decoration:underline; }
+    main { padding:18px 28px; }
+    section { margin-bottom:26px; }
+    h2 { font-size:14px; color:#58a6ff; border-bottom:1px solid #21262d; padding-bottom:5px; margin-bottom:12px; }
+    .stat-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+    .stat-card { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:12px 18px; min-width:120px; }
+    .stat-card .sv { font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; }
+    .stat-card .sl { font-size:11px; color:#8b949e; margin-top:2px; }
+    .red{color:#f85149;} .green{color:#3fb950;} .yellow{color:#f0b429;} .blue{color:#58a6ff;} .purple{color:#bc8cff;}
+    .tbl-wrap { overflow-x:auto; }
+    table { border-collapse:collapse; width:100%; font-size:12px; }
+    th,td { text-align:left; padding:6px 8px; border-bottom:1px solid #21262d; white-space:nowrap; }
+    th { color:#8b949e; font-weight:600; }
+    tr:hover td { background:#161b22; }
+    .num { text-align:right; font-variant-numeric:tabular-nums; }
+    .mono { font-family:monospace; font-size:11px; }
+    a.addr { color:#58a6ff; text-decoration:none; }
+    a.addr:hover { text-decoration:underline; }
+    .pill { display:inline-block; padding:1px 7px; border-radius:8px; font-size:10px; }
+    .pill-pull{background:#1a4731;color:#3fb950;} .pill-recycle{background:#3a2d0a;color:#f0b429;} .pill-burn{background:#3d1d1a;color:#f85149;}
+    .big { color:#bc8cff; font-weight:700; }
+    .cols { display:flex; gap:24px; flex-wrap:wrap; } .cols > div { flex:1; min-width:300px; }
+    .bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+    select { background:#161b22; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:5px 10px; font-size:12px; }
+    .progress { background:#21262d; border-radius:5px; height:10px; overflow:hidden; margin:6px 0 2px; }
+    .progress > div { height:100%; background:linear-gradient(90deg,#1f6feb,#3fb950); width:0%; transition:width .6s; }
+    .countdown { background:#1a2332; border:1px solid #1f6feb; border-radius:8px; padding:14px 20px; margin-bottom:18px; }
+    .cd-time { font-size:30px; font-weight:800; font-variant-numeric:tabular-nums; color:#58a6ff; }
+    .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#3fb950; margin-right:5px; animation:pulse 1.4s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+    .muted { color:#8b949e; font-size:13px; }
+    img.th { width:30px; height:40px; object-fit:cover; border-radius:3px; background:#0b0d10; display:block; }
+  </style>
+</head>
+<body>
+<header>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <span style="font-size:26px;">🔴</span>
+    <div><h1>CollectIQ Live</h1><div class="sub">限量卡機開放窗口 · 鏈上獎池即時追蹤</div></div>
+  </div>
+  <nav style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+    <a href="/">總覽</a>
+    <a href="/intelligence">Price Intel</a>
+    <a href="/holdings">鏈上持有</a>
+    <a href="/live" style="border:1px solid #1f6feb;background:#1f6feb22;">🔴 Live Pool</a>
+    <a href="/api-status">API 狀態</a>
+  </nav>
+</header>
+
+<main>
+  <div class="bar">
+    <label class="muted">卡池：</label>
+    <select id="poolSel" onchange="switchPool()"></select>
+    <span class="muted" id="updated"></span>
+    <label class="muted" style="margin-left:auto;"><input type="checkbox" id="autoref" checked> 自動更新 (8s)</label>
+  </div>
+
+  <!-- Countdown (只在有 activeFrom 且未開放時顯示) -->
+  <div class="countdown" id="cd" style="display:none;">
+    <div class="muted" id="cdlabel">距開放</div>
+    <div class="cd-time" id="cdtime">--:--:--</div>
+    <div class="muted" id="cdnote"></div>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="stat-row" id="stats"></div>
+
+  <section>
+    <h2>抽卡進度</h2>
+    <div class="progress"><div id="progbar"></div></div>
+    <div class="muted" id="proglabel"></div>
+  </section>
+
+  <div class="cols">
+    <div>
+      <section>
+        <h2><span class="dot"></span>即時抽卡事件流 <span class="muted" id="feedcount"></span></h2>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>時間(UTC)</th><th>卡片</th><th class="num">FMV</th><th>類型</th><th>錢包</th><th>tx</th></tr></thead>
+            <tbody id="feed"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+    <div>
+      <section>
+        <h2>🐋 抽最多的錢包</h2>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>#</th><th>錢包</th><th class="num">抽卡數</th></tr></thead>
+            <tbody id="whales"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 即時 EV 反推 + 卡價分析 -->
+  <section>
+    <h2>📈 即時獎池 EV 反推（依已抽出的卡動態計算剩餘池價值）</h2>
+    <div class="stat-row" id="evstats"></div>
+    <div class="muted" id="evcov"></div>
+  </section>
+
+  <div class="cols">
+    <div>
+      <section>
+        <h2 class="green">🍀 幸運卡價 / Easter Egg（Renaiss 標低、市場高 ≥1.5x · 仍在池可期待）</h2>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>圖</th><th>卡片</th><th class="num">Renaiss</th><th class="num">市場</th><th class="num">落差</th></tr></thead>
+          <tbody id="eggs"></tbody></table></div>
+      </section>
+    </div>
+    <div>
+      <section>
+        <h2 class="yellow">♻️ 回收回池的高市值卡（避免回收錯誤 / 撿漏）</h2>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>圖</th><th>卡片</th><th class="num">市場價</th></tr></thead>
+          <tbody id="gems"></tbody></table></div>
+      </section>
+    </div>
+  </div>
+
+  <section>
+    <h2 class="red">⚠️ 疑似資料輸入錯誤（Renaiss ≫ 市場 3x 且信心低 → 別只信官方 FMV）</h2>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>圖</th><th>卡片</th><th class="num">Renaiss FMV</th><th class="num">市場價</th><th>信心</th></tr></thead>
+      <tbody id="errs"></tbody></table></div>
+  </section>
+
+  <div class="cols">
+    <div>
+      <section>
+        <h2 class="big">💎 大獎已被抽走 (FMV≥$300)</h2>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>卡片</th><th class="num">FMV</th><th>被誰抽走</th></tr></thead>
+          <tbody id="bigPulled"></tbody></table></div>
+      </section>
+    </div>
+    <div>
+      <section>
+        <h2 class="big">🎁 大獎仍在池內 (可期待)</h2>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>卡片</th><th class="num">FMV</th></tr></thead>
+          <tbody id="bigInPool"></tbody></table></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script>
+const BSCSCAN = "https://bscscan.com";
+let CUR = "";  // 目前選的池 address
+let CD_TARGET = null;
+
+function short(a){ return a ? a.slice(0,6)+"…"+a.slice(-4) : "?"; }
+function fmt(n){ return n==null? "–" : Number(n).toLocaleString(); }
+function usd(n){ return n==null? "–" : "$"+Number(n).toLocaleString(undefined,{maximumFractionDigits:0}); }
+function tUTC(ts){ if(!ts) return "?"; const d=new Date(ts*1000); return d.toISOString().slice(5,16).replace("T"," "); }
+
+async function loadPool(){
+  const r = await fetch("/api/live/pool" + (CUR?`?address=${CUR}`:""));
+  const d = await r.json();
+  if(!d.available){ document.getElementById("stats").innerHTML =
+      `<div class="muted">尚無資料。請跑 <code>scripts/pool_live_monitor.py</code> 產生 live_pool.db。</div>`; return null; }
+  CUR = d.address;
+  // 池選單
+  const sel = document.getElementById("poolSel");
+  if(sel.options.length !== (d.pools||[]).length){
+    sel.innerHTML = (d.pools||[]).map(p=>`<option value="${p.address}" ${p.address===CUR?"selected":""}>${p.name||p.slug||short(p.address)}</option>`).join("");
+  }
+  document.getElementById("updated").textContent = "更新於 " + (d.updated_at||"").slice(0,19).replace("T"," ") + " · 掃到區塊 " + fmt(d.last_block);
+  // 倒數
+  CD_TARGET = null;
+  const cd = document.getElementById("cd");
+  if(d.countdown_seconds !== null && d.countdown_seconds > 0){
+    CD_TARGET = Date.now() + d.countdown_seconds*1000;
+    cd.style.display="block";
+    document.getElementById("cdnote").textContent = d.name + " 開放時間 " + (d.active_from||"");
+  } else { cd.style.display="none"; }
+  // stat cards
+  document.getElementById("stats").innerHTML = [
+    ["灌入池中","loaded","blue"], ["仍在池內","remaining","green"], ["已被抽走","pulled","yellow"],
+    ["回收回池","recycled","purple"], ["已銷毀","burned","red"], ["買家錢包","distinct_buyers",""],
+    ["💎在池","big_in_pool","big"], ["💎已抽走","big_pulled","big"],
+  ].map(([lbl,k,c])=>`<div class="stat-card"><div class="sv ${c}">${fmt(d[k])}</div><div class="sl">${lbl}</div></div>`).join("");
+  // progress
+  const loaded=d.loaded||0, pulled=d.pulled||0;
+  const pct = loaded? Math.min(100, pulled/loaded*100):0;
+  document.getElementById("progbar").style.width = pct+"%";
+  document.getElementById("proglabel").textContent = `${fmt(pulled)} / ${fmt(loaded)} 抽出 (${pct.toFixed(1)}%) · 剩 ${fmt(d.remaining)} 在池`;
+  return d;
+}
+
+async function loadFeed(){
+  const r = await fetch(`/api/live/pulls?address=${CUR}&kind=all&limit=80`);
+  const d = await r.json();
+  document.getElementById("feedcount").textContent = `(${(d.events||[]).length})`;
+  document.getElementById("feed").innerHTML = (d.events||[]).map(e=>{
+    const cls = e.kind==="pull"?"pill-pull":e.kind==="recycle"?"pill-recycle":"pill-burn";
+    const label = e.kind==="pull"?"抽走":e.kind==="recycle"?"回收":e.kind==="burn"?"銷毀":e.kind;
+    const w = e.kind==="pull"? e.to_addr : e.from_addr;
+    const big = (e.fmv!=null && e.fmv>=300)?"big":"";
+    return `<tr>
+      <td class="mono">${tUTC(e.time)}</td>
+      <td class="${big}">${(e.card_name||("#"+String(e.token_id).slice(-8)))}</td>
+      <td class="num ${big}">${usd(e.fmv)}</td>
+      <td><span class="pill ${cls}">${label}</span></td>
+      <td class="mono"><a class="addr" href="${BSCSCAN}/address/${w}" target="_blank">${short(w)}</a></td>
+      <td class="mono"><a class="addr" href="${BSCSCAN}/tx/${e.tx}" target="_blank">↗</a></td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="6" class="muted">尚無事件</td></tr>`;
+}
+
+async function loadWhales(){
+  const r = await fetch(`/api/live/buyers?address=${CUR}&limit=20`);
+  const d = await r.json();
+  document.getElementById("whales").innerHTML = (d.buyers||[]).map((b,i)=>
+    `<tr><td>${i+1}</td><td class="mono"><a class="addr" href="${BSCSCAN}/address/${b.address}" target="_blank">${short(b.address)}</a></td><td class="num">${fmt(b.pulls)}</td></tr>`
+  ).join("") || `<tr><td colspan="3" class="muted">–</td></tr>`;
+}
+
+async function loadBig(){
+  const r = await fetch(`/api/live/big-prizes?address=${CUR}`);
+  const d = await r.json();
+  document.getElementById("bigPulled").innerHTML = (d.pulled||[]).map(c=>
+    `<tr><td>${c.card_name||("#"+String(c.token_id).slice(-8))}</td><td class="num big">${usd(c.fmv)}</td>
+     <td class="mono"><a class="addr" href="${BSCSCAN}/address/${c.holder}" target="_blank">${short(c.holder)}</a></td></tr>`
+  ).join("") || `<tr><td colspan="3" class="muted">尚無大獎被抽走</td></tr>`;
+  document.getElementById("bigInPool").innerHTML = (d.in_pool||[]).map(c=>
+    `<tr><td>${c.card_name||("#"+String(c.token_id).slice(-8))}</td><td class="num big">${usd(c.fmv)}</td></tr>`
+  ).join("") || `<tr><td colspan="2" class="muted">–</td></tr>`;
+}
+
+function thumb(u){ return u? `<img class="th" src="${u}" loading="lazy">` : ""; }
+
+async function loadEV(){
+  const r = await fetch(`/api/live/ev?address=${CUR}`);
+  const d = await r.json();
+  if(!d.available) return;
+  const ratio = d.ev_ratio_live;
+  document.getElementById("evstats").innerHTML = [
+    ["剩餘池·市場EV","remaining_ev_market","green",true],
+    ["剩餘池·Renaiss EV","remaining_ev_renaiss","blue",true],
+    ["已抽·市場均值","pulled_ev_market","yellow",true],
+    ["卡機票價","price","",true],
+  ].map(([lbl,k,c,money])=>`<div class="stat-card"><div class="sv ${c}">${d[k]==null?"–":(money?"$":"")+Number(d[k]).toLocaleString(undefined,{maximumFractionDigits:0})}</div><div class="sl">${lbl}</div></div>`).join("")
+   + `<div class="stat-card"><div class="sv ${ratio==null?"":ratio>=1?"green":"red"}">${ratio==null?"–":ratio+"x"}</div><div class="sl">現在買·值回票價?</div></div>`;
+  const cov = d.coverage||{};
+  document.getElementById("evcov").innerHTML = `真實市場價覆蓋率 ${cov.with_market_price||0}/${cov.in_pool_total||0} (${cov.pct||0}%)`
+    + (cov.pct<30? ` — <span class="yellow">覆蓋率偏低，EV 僅供參考；新卡機的卡會隨 Index API 每日配額逐步補齊</span>`:"");
+  // easter eggs
+  document.getElementById("eggs").innerHTML = (d.easter_eggs||[]).map(c=>
+    `<tr><td>${thumb(c.image)}</td><td>${(c.name||"#"+String(c.token_id).slice(-8))}</td>
+     <td class="num">${usd(c.renaiss_fmv)}</td><td class="num green">${usd(c.market_fmv)}</td>
+     <td class="num green">${c.gap_pct!=null? c.gap_pct.toFixed(0)+"%":"–"}</td></tr>`
+  ).join("") || `<tr><td colspan="5" class="muted">尚無（覆蓋率補齊後浮現）</td></tr>`;
+  // recycled gems
+  document.getElementById("gems").innerHTML = (d.recycled_gems||[]).map(c=>
+    `<tr><td>${thumb(c.image)}</td><td>${(c.name||"#"+String(c.token_id).slice(-8))}</td><td class="num yellow">${usd(c.market_fmv)}</td></tr>`
+  ).join("") || `<tr><td colspan="3" class="muted">–</td></tr>`;
+  // data errors
+  document.getElementById("errs").innerHTML = (d.data_errors||[]).map(c=>
+    `<tr><td>${thumb(c.image)}</td><td>${(c.name||"#"+String(c.token_id).slice(-8))}</td>
+     <td class="num red">${usd(c.renaiss_fmv)}</td><td class="num">${usd(c.market_fmv)}</td><td class="muted">${c.confidence||"?"}</td></tr>`
+  ).join("") || `<tr><td colspan="5" class="muted">–</td></tr>`;
+}
+
+async function refreshAll(){
+  const d = await loadPool();
+  if(!d) return;
+  await Promise.all([loadFeed(), loadWhales(), loadBig(), loadEV()]);
+}
+function switchPool(){ CUR = document.getElementById("poolSel").value; refreshAll(); }
+
+// 倒數計時器
+setInterval(()=>{
+  if(!CD_TARGET) return;
+  let s = Math.max(0, Math.floor((CD_TARGET - Date.now())/1000));
+  const h=String(Math.floor(s/3600)).padStart(2,"0"), m=String(Math.floor(s%3600/60)).padStart(2,"0"), ss=String(s%60).padStart(2,"0");
+  document.getElementById("cdtime").textContent = `${h}:${m}:${ss}`;
+}, 1000);
+
+// 自動更新
+setInterval(()=>{ if(document.getElementById("autoref").checked) refreshAll(); }, 8000);
+refreshAll();
+</script>
+</body>
+</html>

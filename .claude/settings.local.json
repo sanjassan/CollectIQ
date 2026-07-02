@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "mcp__Claude_in_Chrome__javascript_tool",
+      "mcp__Claude_in_Chrome__navigate",
+      "Bash(curl -s \"http://localhost:8502/api/price-by-url?url=https://www.pricecharting.com/game/pokemon-fossil/slowpoke-55&grader=PSA&grade=10\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s http://localhost:8502/compare)",
+      "Bash(curl -s \"http://localhost:8502/api/comparison?flag=renaiss_low&min_delta=20\")",
+      "Bash(pkill -f \"python3.*dashboard.py\")",
+      "Bash(DASHBOARD_PORT=8502 nohup python3 dashboard.py)"
+    ]
+  }
+}

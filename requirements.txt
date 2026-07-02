@@ -1,0 +1,8 @@
+# Renaiss EV Monitor v2 - Dependencies
+
+pandas
+requests
+python-dotenv
+flask
+beautifulsoup4
+web3

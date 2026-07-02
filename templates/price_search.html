@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>外部比價搜尋 — CollectIQ</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+           margin: 0; background: #0d1117; color: #e6edf3; }
+    header { padding: 20px 28px; background: #161b22; border-bottom: 1px solid #30363d;
+             display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand h1 { margin: 0; font-size: 22px; font-weight: 800; }
+    .brand .logo { font-size: 26px; }
+    .brand .tagline { color: #8b949e; font-size: 12px; margin-top: 2px; }
+    nav { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+    nav a { color: #c9d1d9; text-decoration: none; font-size: 13px; padding: 5px 12px;
+            border-radius: 6px; border: 1px solid transparent; transition: all .15s; }
+    nav a:hover { background: #21262d; border-color: #30363d; }
+    nav a.active { background: #1f6feb22; border-color: #1f6feb; color: #58a6ff; }
+
+    main { padding: 24px 28px; max-width: 900px; margin: 0 auto; }
+
+    .search-box {
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      padding: 20px 24px; margin-bottom: 24px;
+    }
+    .search-box h2 { margin: 0 0 14px; font-size: 15px; color: #58a6ff; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px; }
+    .field label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: .5px; }
+    .field input, .field select {
+      background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+      color: #e6edf3; padding: 7px 10px; font-size: 13px; outline: none;
+    }
+    .field input:focus, .field select:focus { border-color: #58a6ff; }
+    .btn {
+      background: #1f6feb; color: #fff; border: none; border-radius: 6px;
+      padding: 9px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
+      align-self: flex-end;
+    }
+    .btn:hover { background: #388bfd; }
+    .btn:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
+
+    .examples { margin-top: 10px; }
+    .examples span { font-size: 12px; color: #8b949e; margin-right: 8px; }
+    .example-btn {
+      background: #21262d; border: 1px solid #30363d; border-radius: 4px;
+      color: #c9d1d9; font-size: 12px; padding: 2px 9px; cursor: pointer; margin-right: 6px; margin-bottom: 4px;
+    }
+    .example-btn:hover { background: #30363d; }
+
+    #status { margin-top: 10px; font-size: 13px; min-height: 18px; }
+    .loading { color: #8b949e; }
+    .err { color: #f85149; }
+
+    .results-list { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+                    padding: 16px 20px; margin-bottom: 20px; }
+    .results-list h3 { margin: 0 0 12px; font-size: 13px; color: #8b949e; font-weight: 600;
+                        text-transform: uppercase; letter-spacing: .5px; }
+    .result-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px; border-radius: 6px; margin-bottom: 4px; cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .result-item:hover { background: #1f2937; border-color: #30363d; }
+    .result-item .r-title { font-size: 13px; }
+    .result-item .r-url { font-size: 11px; color: #8b949e; font-family: monospace; }
+    .result-item .pick-btn {
+      background: #21262d; border: 1px solid #30363d; border-radius: 5px;
+      color: #58a6ff; font-size: 12px; padding: 3px 10px; cursor: pointer; white-space: nowrap;
+    }
+    .result-item .pick-btn:hover { background: #1f6feb22; }
+
+    .price-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+                  padding: 20px 24px; }
+    .price-card .pc-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .price-card .pc-meta { font-size: 12px; color: #8b949e; margin-bottom: 18px; }
+    .price-card .pc-meta a { color: #58a6ff; text-decoration: none; }
+
+    .price-hero { display: flex; gap: 24px; align-items: flex-end; margin-bottom: 20px; flex-wrap: wrap; }
+    .hero-item .hl { font-size: 11px; color: #8b949e; text-transform: uppercase; margin-bottom: 4px; }
+    .hero-val { font-size: 30px; font-weight: 700; }
+    .hero-val.green { color: #3fb950; }
+    .hero-val.muted { color: #8b949e; }
+
+    table.gt { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .gt th { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+              text-align: left; padding: 5px 8px; border-bottom: 1px solid #21262d; }
+    .gt td { padding: 7px 8px; border-bottom: 1px solid #21262d; }
+    .gt tr.hl td { background: #1a2b3d; }
+    .gt .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px;
+            background: #1f6feb33; color: #58a6ff; }
+
+    footer { text-align: center; padding: 20px; font-size: 11px; color: #484f58; border-top: 1px solid #21262d; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo">🔬</span>
+    <div>
+      <h1>CollectIQ</h1>
+      <div class="tagline">RWA Price Verification Engine for Renaiss</div>
+    </div>
+  </div>
+  <nav>
+    <a href="/">總覽</a>
+    <a href="/verify">價格驗證</a>
+    <a href="/price-search" class="active">外部比價</a>
+    <a href="/intelligence">Price Intel</a>
+    <a href="/holdings">鏈上持有</a>
+    <a href="/oracle">Oracle</a>
+    <a href="/api-status">API 狀態</a>
+  </nav>
+</header>
+
+<main>
+  <div class="search-box">
+    <h2>🔍 PriceCharting 外部價格搜尋</h2>
+    <div class="row">
+      <div class="field" style="flex:2; min-width:220px;">
+        <label>卡名 / 系列 / 卡號（混合搜尋）</label>
+        <input id="q" type="text" placeholder="例：Temporal Forces Charizard ex 125" />
+      </div>
+      <div class="field" style="max-width:130px;">
+        <label>分級機構</label>
+        <select id="grader">
+          <option value="">— 未分級 —</option>
+          <option value="PSA">PSA</option>
+          <option value="BGS">BGS / Beckett</option>
+          <option value="CGC">CGC</option>
+        </select>
+      </div>
+      <div class="field" style="max-width:100px;">
+        <label>等級</label>
+        <input id="grade" type="text" placeholder="10 / 9.5 / 9" />
+      </div>
+      <button class="btn" id="search-btn" onclick="doSearch()">搜尋</button>
+    </div>
+    <div class="examples">
+      <span>快速範例：</span>
+      <button class="example-btn" onclick="fillExample('Paldea Evolved Skeledirge ex 258','PSA','10')">Skeledirge PSA10</button>
+      <button class="example-btn" onclick="fillExample('Temporal Forces Charizard ex 125','PSA','10')">Charizard TF PSA10</button>
+      <button class="example-btn" onclick="fillExample('Japanese Eevee Heroes Umbreon VMAX 069','PSA','10')">Umbreon JP PSA10</button>
+      <button class="example-btn" onclick="fillExample('Obsidian Flames Charizard ex 215','','')">Charizard ex (raw)</button>
+      <button class="example-btn" onclick="fillExample('Japanese Moonbreon','PSA','10')">Moonbreon JP</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div id="list-wrap" style="display:none"></div>
+  <div id="price-wrap" style="display:none"></div>
+</main>
+
+<footer>
+  CollectIQ · RWA Price Verification Engine · Built for Renaiss Hackathon 2026
+</footer>
+
+<script>
+let _grader = '', _grade = '';
+
+function fillExample(q, grader, grade) {
+  document.getElementById('q').value = q;
+  document.getElementById('grader').value = grader;
+  document.getElementById('grade').value = grade;
+  doSearch();
+}
+
+async function doSearch() {
+  const q = document.getElementById('q').value.trim();
+  if (!q) { setStatus('請輸入搜尋關鍵字', 'err'); return; }
+  _grader = document.getElementById('grader').value;
+  _grade  = document.getElementById('grade').value.trim();
+
+  const btn = document.getElementById('search-btn');
+  btn.disabled = true;
+  setStatus('⏳ 搜尋中…', 'loading');
+  document.getElementById('list-wrap').style.display = 'none';
+  document.getElementById('price-wrap').style.display = 'none';
+
+  const p = new URLSearchParams({ q });
+  if (_grader) p.append('grader', _grader);
+  if (_grade)  p.append('grade', _grade);
+
+  try {
+    const res = await fetch('/api/price-search?' + p);
+    const data = await res.json();
+    btn.disabled = false;
+    if (data.error) { setStatus('❌ ' + data.error, 'err'); return; }
+    if (data.mode === 'prices') { setStatus(''); renderPrices(data); }
+    else { setStatus(''); renderList(data); }
+  } catch(e) {
+    btn.disabled = false;
+    setStatus('❌ 連線失敗：' + e.message, 'err');
+  }
+}
+
+function renderList(data) {
+  const wrap = document.getElementById('list-wrap');
+  wrap.style.display = 'block';
+  if (!data.results || !data.results.length) {
+    wrap.innerHTML = `<div class="results-list"><p style="color:#f85149">查無結果，試著換關鍵字。</p></div>`;
+    return;
+  }
+  window._pcUrls = data.results.map(r => r.url);
+  const rows = data.results.map((r, i) => `
+    <div class="result-item" onclick="window._pcPick(${i})">
+      <div>
+        <div class="r-title">${esc(r.title)}</div>
+        <div class="r-url">${r.url.replace('https://www.pricecharting.com','')}</div>
+      </div>
+      <button type="button" class="pick-btn">查這張 →</button>
+    </div>
+  `).join('');
+  wrap.innerHTML = `
+    <div class="results-list">
+      <h3>找到 ${data.results.length} 個結果 — 請選擇正確的卡片</h3>
+      ${rows}
+    </div>`;
+}
+
+window._pcPick = function(idx) { pickResult(window._pcUrls[idx]); };
+
+async function pickResult(url) {
+  setStatus('⏳ 載入價格…', 'loading');
+  document.getElementById('price-wrap').style.display = 'none';
+  const p = new URLSearchParams({ url });
+  if (_grader) p.append('grader', _grader);
+  if (_grade)  p.append('grade', _grade);
+  try {
+    const res = await fetch('/api/price-by-url?' + p);
+    const data = await res.json();
+    setStatus('');
+    renderPrices(data);
+  } catch(e) { setStatus('❌ 連線失敗：' + e.message, 'err'); }
+}
+
+function renderPrices(d) {
+  const wrap = document.getElementById('price-wrap');
+  wrap.style.display = 'block';
+  const ourPrice = d.our_price;
+  const gradeMatched = d.grade_matched || '—';
+  const gradeOrder = ['Ungraded','Grade 7','Grade 8','Grade 9','Grade 9.5','PSA 10'];
+  const grades = d.all_grades || {};
+  let gradeRows = '';
+  for (const label of gradeOrder) {
+    if (!grades[label]) continue;
+    const p = grades[label].price;
+    const isMatch = label === gradeMatched;
+    gradeRows += `
+      <tr class="${isMatch ? 'hl' : ''}">
+        <td>${isMatch ? '▶ ' : ''}<b>${label}</b>${isMatch ? ' <span class="pill">查詢等級</span>' : ''}</td>
+        <td class="num">$${p.toFixed(2)}</td>
+      </tr>`;
+  }
+  wrap.innerHTML = `
+    <div class="price-card">
+      <div class="pc-title">${d.matched_title || d.query}</div>
+      <div class="pc-meta">
+        來源：<a href="${d.source_url}" target="_blank" rel="noopener">${d.source_url}</a>
+      </div>
+      <div class="price-hero">
+        <div class="hero-item">
+          <div class="hl">外部市場價（${gradeMatched}）</div>
+          <div class="hero-val ${ourPrice ? 'green' : 'muted'}">
+            ${ourPrice ? '$' + ourPrice.toFixed(2) : '查無價格'}
+          </div>
+        </div>
+      </div>
+      <table class="gt">
+        <thead><tr><th>等級</th><th class="num">市場價格</th></tr></thead>
+        <tbody>${gradeRows || '<tr><td colspan="2" style="color:#8b949e">查無各等級價格</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
+function setStatus(msg, cls='') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = cls;
+}
+function esc(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('q').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
+</script>
+</body>
+</html>

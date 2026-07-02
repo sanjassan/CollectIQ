@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Renaiss 鏈上持有 · 卡片 / 存放位置</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family:-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+         margin:0; padding:1rem; background:#0f1115; color:#e6e6e6; }
+  h1 { font-size:1.3rem; margin:0 0 .3rem; }
+  .meta { color:#9aa0a6; font-size:.85rem; margin-bottom:.8rem; }
+  .bar { display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center; }
+  input,select { background:#1a1d23; color:#e6e6e6; border:1px solid #2a2e35;
+                 border-radius:.4rem; padding:.4rem .6rem; font-size:.9rem; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:1rem; }
+  .card { background:#171a20; border:1px solid #2a2e35; border-radius:.6rem; overflow:hidden;
+          display:flex; flex-direction:column; }
+  .card .imgwrap { aspect-ratio:3/4; background:#0b0d10; display:flex; align-items:center;
+                   justify-content:center; overflow:hidden; }
+  .card img { width:100%; height:100%; object-fit:cover; }
+  .card .noimg { color:#5a6068; font-size:.8rem; text-align:center; padding:1rem; }
+  .card .body { padding:.6rem; display:flex; flex-direction:column; gap:.3rem; flex:1; }
+  .card .name { font-size:.82rem; line-height:1.25; font-weight:600; }
+  .card .row { font-size:.72rem; color:#9aa0a6; }
+  .card .fmv { color:#4ade80; font-weight:600; }
+  .card a { color:#6cb6ff; text-decoration:none; }
+  .card a:hover { text-decoration:underline; }
+  .pill { display:inline-block; font-size:.65rem; padding:.05rem .35rem; border-radius:.3rem; }
+  .pill.mint { background:#1f7a3d; color:#fff; }
+  .pill.unk { background:#3a3320; color:#f0b429; }
+  .holder { font-family:ui-monospace,Menlo,monospace; font-size:.72rem; }
+</style>
+</head>
+<body>
+  <div style="padding:16px 20px;background:#161b22;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:26px;">🔬</span>
+      <div><h1 style="margin:0;font-size:22px;font-weight:800;">CollectIQ</h1><div style="color:#8b949e;font-size:12px;">RWA Price Verification Engine for Renaiss</div></div>
+    </div>
+    <nav style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+      <a href="/" style="color:#c9d1d9;text-decoration:none;font-size:13px;padding:5px 12px;border-radius:6px;border:1px solid transparent;">總覽</a>
+      <a href="/verify" style="color:#c9d1d9;text-decoration:none;font-size:13px;padding:5px 12px;border-radius:6px;border:1px solid transparent;">價格驗證</a>
+      <a href="/price-search" style="color:#c9d1d9;text-decoration:none;font-size:13px;padding:5px 12px;border-radius:6px;border:1px solid transparent;">外部比價</a>
+      <a href="/intelligence" style="color:#c9d1d9;text-decoration:none;font-size:13px;padding:5px 12px;border-radius:6px;border:1px solid transparent;">Price Intel</a>
+      <a href="/holdings" style="color:#58a6ff;text-decoration:none;font-size:13px;padding:5px 12px;border-radius:6px;border:1px solid #1f6feb;background:#1f6feb22;">鏈上持有</a>
+      <a href="/oracle" style="color:#c9d1d9;text-decoration:none;font-size:13px;padding:5px 12px;border-radius:6px;border:1px solid transparent;">Oracle</a>
+      <a href="/api-status" style="color:#c9d1d9;text-decoration:none;font-size:13px;padding:5px 12px;border-radius:6px;border:1px solid transparent;">API 狀態</a>
+    </nav>
+  </div>
+  <div class="meta" id="meta">載入中…</div>
+  <div class="bar">
+    <input id="q" placeholder="搜尋卡名 / 持有者地址…" style="flex:1;min-width:180px">
+    <label><input type="checkbox" id="onlyId"> 只看已識別</label>
+    <label><input type="checkbox" id="onlyImg"> 只看有圖</label>
+    <select id="sort">
+      <option value="fmv">FMV 高→低</option>
+      <option value="recent">最近轉移</option>
+      <option value="name">卡名</option>
+    </select>
+  </div>
+  <div class="grid" id="grid"></div>
+
+<script>
+let DATA = [];
+async function load() {
+  const r = await fetch('/api/holdings');
+  const j = await r.json();
+  DATA = j.holdings || [];
+  document.getElementById('meta').textContent =
+    `共 ${j.total_tokens} 張 token ｜ 已識別 ${j.identified} ｜ 有圖 ${j.with_image} ｜ ` +
+    `更新於 ${(j.generated_at||'').slice(0,19).replace('T',' ')} UTC ｜ to_addr = 鏈上當前存放位置`;
+  render();
+}
+function render() {
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  const onlyId = document.getElementById('onlyId').checked;
+  const onlyImg = document.getElementById('onlyImg').checked;
+  const sort = document.getElementById('sort').value;
+  let rows = DATA.filter(h => {
+    if (onlyId && !h.identified) return false;
+    if (onlyImg && !h.image_url) return false;
+    if (q && !((h.card_name||'').toLowerCase().includes(q) ||
+               (h.holder||'').toLowerCase().includes(q))) return false;
+    return true;
+  });
+  if (sort === 'fmv') rows.sort((a,b)=>(b.fmv||0)-(a.fmv||0));
+  else if (sort === 'recent') rows.sort((a,b)=>(b.last_block||0)-(a.last_block||0));
+  else rows.sort((a,b)=>(a.card_name||'').localeCompare(b.card_name||''));
+
+  const grid = document.getElementById('grid');
+  grid.innerHTML = rows.map(h => {
+    const img = h.image_url
+      ? `<img loading="lazy" src="${h.image_url}" alt="">`
+      : `<div class="noimg">無圖片<br>#${(h.token_id||'').slice(0,10)}…</div>`;
+    const fmv = (h.fmv!=null) ? `<span class="fmv">$${Number(h.fmv).toFixed(2)}</span>` : '—';
+    const pill = h.identified
+      ? (h.from_mint ? '<span class="pill mint">抽出</span>' : '')
+      : '<span class="pill unk">未識別</span>';
+    const when = (h.last_time||'').slice(0,10);
+    return `<div class="card">
+      <div class="imgwrap">${img}</div>
+      <div class="body">
+        <div class="name">${esc(h.card_name)} ${pill}</div>
+        <div class="row">${fmv}${h.grade? ' ｜ '+esc(h.grade):''}</div>
+        <div class="row">📍 存放位置：<a class="holder" href="${h.bscscan_holder}" target="_blank">${esc(h.holder_short)}</a></div>
+        <div class="row">🔗 <a href="${h.bscscan_token}" target="_blank">BscScan token</a>${h.marketplace_url? ' ｜ <a href="'+h.marketplace_url+'" target="_blank">市場</a>':''}</div>
+        <div class="row">🕐 ${when}</div>
+      </div>
+    </div>`;
+  }).join('') || '<p style="color:#9aa0a6">沒有符合條件的卡片</p>';
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+['q','onlyId','onlyImg','sort'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', render);
+  document.getElementById(id).addEventListener('change', render);
+});
+load();
+</script>
+</body>
+</html>

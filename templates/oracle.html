@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Staking Oracle — CollectIQ</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+           margin: 0; background: #0d1117; color: #e6edf3; }
+
+    header { padding: 20px 28px; background: #161b22; border-bottom: 1px solid #30363d;
+             display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand h1 { margin: 0; font-size: 22px; font-weight: 800; }
+    .brand .tagline { color: #8b949e; font-size: 12px; margin-top: 2px; }
+    nav { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+    nav a { color: #c9d1d9; text-decoration: none; font-size: 13px; padding: 5px 12px;
+            border-radius: 6px; border: 1px solid transparent; transition: all .15s; }
+    nav a:hover { background: #21262d; border-color: #30363d; }
+    nav a.active { background: #1f6feb22; border-color: #1f6feb; color: #58a6ff; }
+
+    main { padding: 28px; max-width: 1200px; margin: 0 auto; }
+
+    /* ─── Hero ────────────────────────────────────── */
+    .oracle-hero {
+      background: linear-gradient(135deg, #0d2137 0%, #161b22 50%, #1a0d2e 100%);
+      border: 1px solid #30363d; border-radius: 14px;
+      padding: 36px 32px; margin-bottom: 28px; position: relative; overflow: hidden;
+    }
+    .oracle-hero::before {
+      content: ''; position: absolute; top: -60px; right: -60px;
+      width: 200px; height: 200px; border-radius: 50%;
+      background: radial-gradient(circle, #1f6feb22 0%, transparent 70%);
+    }
+    .oracle-hero h2 { margin: 0 0 8px; font-size: 28px; font-weight: 800; }
+    .oracle-hero h2 span { background: linear-gradient(90deg, #58a6ff, #a78bfa);
+                            -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .oracle-hero p { margin: 0; color: #8b949e; font-size: 14px; line-height: 1.7; max-width: 700px; }
+
+    /* ─── Architecture Diagram ────────────────────── */
+    .arch { display: flex; align-items: center; justify-content: center; gap: 0;
+            margin: 32px 0; flex-wrap: wrap; }
+    .arch-node {
+      background: #161b22; border: 2px solid #30363d; border-radius: 12px;
+      padding: 16px 20px; text-align: center; min-width: 150px;
+    }
+    .arch-node .an-icon { font-size: 28px; margin-bottom: 6px; }
+    .arch-node .an-title { font-size: 13px; font-weight: 700; }
+    .arch-node .an-sub { font-size: 11px; color: #8b949e; margin-top: 4px; }
+    .arch-node.highlight { border-color: #1f6feb; background: #0d1b2e; box-shadow: 0 0 20px #1f6feb22; }
+    .arch-arrow { font-size: 24px; color: #484f58; padding: 0 8px; }
+
+    /* ─── Metrics ─────────────────────────────────── */
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 28px; }
+    .metric {
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      padding: 18px; text-align: center;
+    }
+    .metric .m-val { font-size: 30px; font-weight: 800; margin-bottom: 4px; }
+    .metric .m-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: .5px; }
+    .metric .m-sub { font-size: 11px; color: #484f58; margin-top: 4px; }
+    .c-green { color: #3fb950; }
+    .c-blue  { color: #58a6ff; }
+    .c-purple { color: #a78bfa; }
+    .c-amber { color: #d29922; }
+    .c-white { color: #e6edf3; }
+
+    /* ─── LTV Tiers ───────────────────────────────── */
+    .tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 28px; }
+    .tier-card {
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      padding: 20px; position: relative; overflow: hidden;
+    }
+    .tier-card .tier-bar {
+      position: absolute; top: 0; left: 0; right: 0; height: 4px;
+    }
+    .tier-card h4 { margin: 8px 0 10px; font-size: 14px; }
+    .tier-card .tier-detail { font-size: 12px; color: #8b949e; line-height: 1.8; }
+    .tier-card .tier-ltv { font-size: 36px; font-weight: 800; margin: 8px 0; }
+
+    /* ─── Section ─────────────────────────────────── */
+    .section { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+               padding: 20px; margin-bottom: 20px; }
+    .section h3 { margin: 0 0 14px; font-size: 14px; font-weight: 700;
+                  display: flex; align-items: center; gap: 8px; }
+    .section h3 .badge { font-size: 11px; background: #21262d; color: #8b949e; padding: 2px 8px;
+                         border-radius: 10px; font-weight: 600; }
+
+    /* ─── Table ───────────────────────────────────── */
+    table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #21262d; }
+    th { color: #8b949e; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; }
+    tr:hover td { background: #1c2128; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    img.card { height: 34px; border-radius: 3px; vertical-align: middle; }
+    .conf-high { color: #3fb950; font-weight: 700; }
+    .conf-medium { color: #d29922; font-weight: 700; }
+    .conf-low { color: #f85149; font-weight: 700; }
+    .muted { color: #8b949e; }
+
+    /* ─── Use Cases ───────────────────────────────── */
+    .use-cases { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 28px; }
+    .use-case {
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      padding: 20px;
+    }
+    .use-case .uc-icon { font-size: 28px; margin-bottom: 8px; }
+    .use-case h4 { margin: 0 0 8px; font-size: 14px; }
+    .use-case p { margin: 0; font-size: 12px; color: #8b949e; line-height: 1.6; }
+    .use-case .uc-tag { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 8px;
+                         margin-top: 10px; }
+    .tag-live { background: #1a4731; color: #3fb950; }
+    .tag-next { background: #1f3d6e; color: #58a6ff; }
+    .tag-future { background: #2d2040; color: #a78bfa; }
+
+    footer { text-align: center; padding: 20px; font-size: 11px; color: #484f58; border-top: 1px solid #21262d; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span style="font-size:26px;">🔬</span>
+    <div>
+      <h1>CollectIQ</h1>
+      <div class="tagline">RWA Price Verification Engine for Renaiss</div>
+    </div>
+  </div>
+  <nav>
+    <a href="/">總覽</a>
+    <a href="/verify">價格驗證</a>
+    <a href="/price-search">外部比價</a>
+    <a href="/intelligence">Price Intel</a>
+    <a href="/holdings">鏈上持有</a>
+    <a href="/oracle" class="active">Oracle</a>
+    <a href="/api-status">API 狀態</a>
+  </nav>
+</header>
+
+<main>
+  <!-- Hero -->
+  <div class="oracle-hero">
+    <h2>🏦 <span>Staking Price Oracle</span></h2>
+    <p>
+      社會能運作，是因為貨幣有公認的價值。卡片要成為可質押、可借貸的鏈上軟通貨，
+      需要的不是更多功能 — 而是<b>獨立的定價公信力</b>。<br>
+      CollectIQ 提供經過外部市場交叉驗證的價格，讓每張 RWA 都有可信的抵押價值。
+    </p>
+  </div>
+
+  <!-- Architecture -->
+  <div class="arch">
+    <div class="arch-node">
+      <div class="an-icon">🃏</div>
+      <div class="an-title">Renaiss NFT</div>
+      <div class="an-sub">鑑定卡上鏈</div>
+    </div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-node highlight">
+      <div class="an-icon">🔬</div>
+      <div class="an-title">CollectIQ Oracle</div>
+      <div class="an-sub">獨立價格驗證</div>
+    </div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-node">
+      <div class="an-icon">🏦</div>
+      <div class="an-title">質押合約</div>
+      <div class="an-sub">動態 LTV / 清算</div>
+    </div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-node">
+      <div class="an-icon">🔗</div>
+      <div class="an-title">DeFi 組合</div>
+      <div class="an-sub">借貸 / 流動性池</div>
+    </div>
+  </div>
+
+  <!-- Key Metrics -->
+  <div class="metrics" id="metrics">
+    <div class="metric"><div class="m-val c-blue" id="m-verified">—</div><div class="m-label">Oracle 驗證卡片</div></div>
+    <div class="metric"><div class="m-val c-purple" id="m-collateral">—</div><div class="m-label">可質押總價值</div></div>
+    <div class="metric"><div class="m-val c-green" id="m-avg-ltv">—</div><div class="m-label">平均 LTV</div></div>
+    <div class="metric"><div class="m-val c-amber" id="m-high-conf">—</div><div class="m-label">高信心卡片</div></div>
+  </div>
+
+  <!-- LTV Tiers -->
+  <div class="section" style="background:transparent;border:none;padding:0;">
+    <h3 style="margin-bottom:16px;">📊 動態 LTV 分級 <span class="badge">依驗證信心度調整</span></h3>
+  </div>
+  <div class="tiers" id="tiers">
+    <div class="tier-card">
+      <div class="tier-bar" style="background:#3fb950;"></div>
+      <h4 class="conf-high">🟢 High Confidence</h4>
+      <div class="tier-ltv c-green">70%</div>
+      <div class="tier-detail">
+        Renaiss FMV 與外部市場價差 <b>±10% 以內</b><br>
+        定價可信 → 質押成數最高<br>
+        <span id="tier-high-n">—</span> 張卡片適用
+      </div>
+    </div>
+    <div class="tier-card">
+      <div class="tier-bar" style="background:#d29922;"></div>
+      <h4 class="conf-medium">🟡 Medium Confidence</h4>
+      <div class="tier-ltv c-amber">50%</div>
+      <div class="tier-detail">
+        價差在 <b>10%–30%</b> 之間<br>
+        有偏差但仍在合理範圍<br>
+        <span id="tier-med-n">—</span> 張卡片適用
+      </div>
+    </div>
+    <div class="tier-card">
+      <div class="tier-bar" style="background:#f85149;"></div>
+      <h4 class="conf-low">🔴 Low Confidence</h4>
+      <div class="tier-ltv" style="color:#f85149;">30%</div>
+      <div class="tier-detail">
+        價差 <b>超過 30%</b><br>
+        定價偏離嚴重 → 保守質押<br>
+        <span id="tier-low-n">—</span> 張卡片適用
+      </div>
+    </div>
+  </div>
+
+  <!-- Use Cases -->
+  <div class="use-cases">
+    <div class="use-case">
+      <div class="uc-icon">🔍</div>
+      <h4>獨立價格驗證</h4>
+      <p>向 PriceCharting 獨立取得每張鑑定卡的公開成交價，與 Renaiss FMV 交叉驗證。目前已覆蓋 520+ 張卡。</p>
+      <div class="uc-tag tag-live">✅ 已上線</div>
+    </div>
+    <div class="use-case">
+      <div class="uc-icon">🔄</div>
+      <h4>鑑定商換算</h4>
+      <p>PSA / CGC / BGS 同分卡的市場價差可達 40%。Oracle 內建換算係數，確保跨鑑定商的公平定價。</p>
+      <div class="uc-tag tag-live">✅ 已上線</div>
+    </div>
+    <div class="use-case">
+      <div class="uc-icon">📡</div>
+      <h4>鏈上 Oracle Feed</h4>
+      <p>將驗證後的價格推上鏈，質押合約可直接讀取。Smart contract 根據 confidence 動態調整 LTV。</p>
+      <div class="uc-tag tag-next">🔜 Next Phase</div>
+    </div>
+    <div class="use-case">
+      <div class="uc-icon">🏗️</div>
+      <h4>DeFi 可組合性</h4>
+      <p>有了可信的鏈上價格，Aave/Compound-style 的 RWA 借貸協議就有接入基礎。卡片從收藏品升級為金融工具。</p>
+      <div class="uc-tag tag-future">🔮 Future</div>
+    </div>
+  </div>
+
+  <!-- Simulation Table -->
+  <div class="section">
+    <h3>🏦 質押模擬 <span class="badge">以真實驗證數據計算</span></h3>
+    <p class="muted" style="font-size:12px;margin-bottom:14px;">
+      每張卡的質押參數由 Oracle 根據外部驗證價和信心度即時計算。
+      <b>驗證價</b> = 外部市場成交價（非 Renaiss FMV）·
+      <b>LTV</b> = 可質押比例 ·
+      <b>清算價</b> = 驗證價 × 80%（跌破此價觸發清算）
+    </p>
+    <div id="sim-table" class="muted">載入中…</div>
+  </div>
+
+  <!-- How it differs -->
+  <div class="section">
+    <h3>💡 為什麼不能用 Renaiss FMV 直接質押？</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:12px;">
+      <div style="background:#3d1d1a33;border:1px solid #3d1d1a;border-radius:8px;padding:16px;">
+        <div style="font-size:14px;font-weight:700;color:#f85149;margin-bottom:8px;">❌ 平台自己定價</div>
+        <ul style="margin:0;padding-left:18px;font-size:12px;color:#8b949e;line-height:1.8;">
+          <li>平台既是發行者又是定價者 → 利益衝突</li>
+          <li>無法排除 FMV 被高估的可能</li>
+          <li>外部 DeFi 協議不會信任平台自報價格</li>
+          <li>等同銀行自己替自己的資產估價</li>
+        </ul>
+      </div>
+      <div style="background:#1a473133;border:1px solid #1a4731;border-radius:8px;padding:16px;">
+        <div style="font-size:14px;font-weight:700;color:#3fb950;margin-bottom:8px;">✅ CollectIQ 獨立驗證</div>
+        <ul style="margin:0;padding-left:18px;font-size:12px;color:#8b949e;line-height:1.8;">
+          <li>價格來自 PriceCharting 公開成交數據</li>
+          <li>交叉驗證產生 confidence score</li>
+          <li>LTV 根據驗證結果動態調整</li>
+          <li>等同第三方估價師 → DeFi 協議可信任</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  CollectIQ · RWA Price Verification Engine · Built for Renaiss Hackathon 2026
+</footer>
+
+<script>
+const fmt = (n, d=2) => (n == null || isNaN(+n)) ? "—" : Number(n).toLocaleString(undefined, {maximumFractionDigits: d});
+const fmtUsd = (n) => n == null ? "—" : "$" + fmt(n);
+
+async function loadOracle() {
+  try {
+    const d = await fetch("/api/oracle/simulate").then(r => r.json());
+    if (d.error) return;
+
+    document.getElementById("m-verified").textContent = d.total_verified;
+    document.getElementById("m-collateral").textContent = fmtUsd(d.total_collateral_value);
+    document.getElementById("m-avg-ltv").textContent = (d.avg_ltv * 100).toFixed(1) + "%";
+    document.getElementById("m-high-conf").textContent = d.by_confidence.high || 0;
+
+    document.getElementById("tier-high-n").textContent = d.by_confidence.high || 0;
+    document.getElementById("tier-med-n").textContent = d.by_confidence.medium || 0;
+    document.getElementById("tier-low-n").textContent = d.by_confidence.low || 0;
+
+    // Table
+    const rows = d.rows || [];
+    if (!rows.length) {
+      document.getElementById("sim-table").innerHTML = '<div class="muted">無資料</div>';
+      return;
+    }
+    let h = '<table><thead><tr>'
+      + '<th>卡片</th><th>等級</th>'
+      + '<th class="num">Renaiss FMV</th>'
+      + '<th class="num">驗證價</th>'
+      + '<th>信心度</th>'
+      + '<th class="num">LTV</th>'
+      + '<th class="num">可質押價值</th>'
+      + '<th class="num">清算價</th>'
+      + '</tr></thead><tbody>';
+
+    for (const r of rows.slice(0, 100)) {
+      const confCls = 'conf-' + r.confidence;
+      const confLabel = r.confidence === 'high' ? '🟢 高' : r.confidence === 'medium' ? '🟡 中' : '🔴 低';
+      const img = r.image_url ? `<img class="card" src="${r.image_url}" loading="lazy"> ` : '';
+      h += `<tr>`
+        + `<td>${img}${(r.name||'—')}</td>`
+        + `<td>${r.grader||''} ${r.grade||''}</td>`
+        + `<td class="num">${fmtUsd(r.renaiss_fmv)}</td>`
+        + `<td class="num" style="font-weight:700">${fmtUsd(r.verified_price)}</td>`
+        + `<td><span class="${confCls}">${confLabel}</span></td>`
+        + `<td class="num">${(r.ltv*100)}%</td>`
+        + `<td class="num" style="color:#a78bfa;font-weight:700">${fmtUsd(r.collateral_value)}</td>`
+        + `<td class="num muted">${fmtUsd(r.liquidation_price)}</td>`
+        + `</tr>`;
+    }
+    document.getElementById("sim-table").innerHTML = h + '</tbody></table>';
+
+  } catch(e) {
+    document.getElementById("sim-table").innerHTML = '<div class="muted">載入失敗：' + e + '</div>';
+  }
+}
+
+loadOracle();
+</script>
+</body>
+</html>

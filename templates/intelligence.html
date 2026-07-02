@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>CollectIQ — Price Intelligence</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family:-apple-system,"Segoe UI","Noto Sans TC",sans-serif;
+           margin:0; background:#0d1117; color:#e6edf3; }
+    header { padding:16px 24px; background:#161b22; border-bottom:1px solid #30363d; }
+    h1 { margin:0; font-size:18px; }
+    .sub { color:#8b949e; font-size:12px; margin-top:3px; }
+    nav a { color:#58a6ff; text-decoration:none; font-size:13px; margin-right:14px; }
+    nav a:hover { text-decoration:underline; }
+    main { padding:18px 24px; }
+    section { margin-bottom:30px; }
+    h2 { font-size:14px; color:#58a6ff; border-bottom:1px solid #21262d;
+         padding-bottom:5px; margin-bottom:10px; }
+    /* summary cards */
+    .stat-row { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:20px; }
+    .stat-card { background:#161b22; border:1px solid #30363d; border-radius:8px;
+                 padding:12px 18px; min-width:140px; }
+    .stat-card .sv { font-size:22px; font-weight:700; }
+    .stat-card .sl { font-size:11px; color:#8b949e; margin-top:2px; }
+    .red { color:#f85149; } .green { color:#3fb950; } .yellow { color:#f0b429; }
+    .blue { color:#58a6ff; }
+    /* filter bar */
+    .bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center; }
+    .bar input, .bar select { background:#161b22; color:#e6edf3; border:1px solid #30363d;
+        border-radius:6px; padding:5px 10px; font-size:12px; }
+    .bar input { flex:1; min-width:180px; }
+    /* table */
+    .tbl-wrap { overflow-x:auto; }
+    table { border-collapse:collapse; width:100%; font-size:12px; }
+    th,td { text-align:left; padding:5px 8px; border-bottom:1px solid #21262d;
+            white-space:nowrap; }
+    th { color:#8b949e; font-weight:600; cursor:pointer; user-select:none; }
+    th.active { color:#58a6ff; }
+    tr:hover td { background:#161b22; }
+    .num { text-align:right; font-variant-numeric:tabular-nums; }
+    .gap-pos { color:#f85149; font-weight:600; }   /* overvalued on Renaiss */
+    .gap-neg { color:#3fb950; font-weight:600; }   /* undervalued on Renaiss */
+    .thumb { width:32px; height:42px; object-fit:cover; border-radius:3px;
+             background:#0b0d10; display:block; }
+    .conf-high   { color:#3fb950; }
+    .conf-medium { color:#f0b429; }
+    .conf-low    { color:#8b949e; }
+    .pill { display:inline-block; padding:0 7px; border-radius:8px; font-size:10px; }
+    .pill-r { background:#3d1d1a; color:#f85149; }
+    .pill-g { background:#1a4731; color:#3fb950; }
+    /* wallet table */
+    .wt td:first-child { font-family:monospace; font-size:11px; }
+    /* chart placeholder */
+    .sparkline { display:flex; gap:1px; align-items:flex-end; height:24px; }
+    .sparkline span { background:#58a6ff55; min-width:3px; border-radius:1px; }
+    /* tabs */
+    .tabs { display:flex; gap:0; border-bottom:1px solid #30363d; margin-bottom:14px; }
+    .tab { padding:6px 16px; font-size:13px; cursor:pointer; border-bottom:2px solid transparent; }
+    .tab.active { border-bottom-color:#58a6ff; color:#58a6ff; }
+    .tab:hover { color:#58a6ff; }
+    .panel { display:none; } .panel.active { display:block; }
+    /* muted */
+    .muted { color:#8b949e; font-size:13px; }
+    .err { color:#f85149; }
+  </style>
+</head>
+<body>
+<header style="padding:20px 28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+  <div style="display:flex;align-items:center;gap:10px;">
+    <span style="font-size:26px;">🔬</span>
+    <div><h1 style="margin:0;font-size:22px;font-weight:800;">CollectIQ</h1><div class="sub" style="margin:0;">RWA Price Verification Engine for Renaiss</div></div>
+  </div>
+  <nav style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+    <a href="/" style="padding:5px 12px;border-radius:6px;border:1px solid transparent;">總覽</a>
+    <a href="/verify" style="padding:5px 12px;border-radius:6px;border:1px solid transparent;">價格驗證</a>
+    <a href="/price-search" style="padding:5px 12px;border-radius:6px;border:1px solid transparent;">外部比價</a>
+    <a href="/intelligence" style="padding:5px 12px;border-radius:6px;border:1px solid #1f6feb;background:#1f6feb22;color:#58a6ff;">Price Intel</a>
+    <a href="/holdings" style="padding:5px 12px;border-radius:6px;border:1px solid transparent;">鏈上持有</a>
+    <a href="/oracle" style="padding:5px 12px;border-radius:6px;border:1px solid transparent;">Oracle</a>
+    <a href="/api-status" style="padding:5px 12px;border-radius:6px;border:1px solid transparent;">API 狀態</a>
+  </nav>
+</header>
+<div style="padding:0 28px;margin-bottom:8px;"><div class="sub" id="meta">載入中…</div></div>
+<main>
+
+  <!-- Build Progress Banner -->
+  <div id="build-banner" style="display:none; background:#1a2332; border:1px solid #1f6feb; border-radius:8px; padding:10px 16px; margin-bottom:16px; font-size:13px;">
+    <span style="color:#58a6ff;">⚙️ 背景數據建置中</span>
+    <span id="build-pct" style="font-weight:700; margin:0 8px;"></span>
+    <span id="build-eta" style="color:#8b949e;"></span>
+    <div id="build-bar-wrap" style="margin-top:6px; background:#21262d; border-radius:4px; height:4px; overflow:hidden;">
+      <div id="build-bar" style="height:100%; background:#1f6feb; width:0%; transition:width 1s;"></div>
+    </div>
+  </div>
+
+  <!-- Summary Stats -->
+  <div class="stat-row" id="stats-row">
+    <div class="stat-card"><div class="sv blue" id="s-total">—</div><div class="sl">Token 總數</div></div>
+    <div class="stat-card"><div class="sv red"  id="s-over">—</div><div class="sl">Renaiss FMV 虛高 &gt;100%</div></div>
+    <div class="stat-card"><div class="sv green" id="s-under">—</div><div class="sl">Renaiss FMV 低估 &lt;−20%</div></div>
+    <div class="stat-card"><div class="sv yellow" id="s-gap">—</div><div class="sl">平均 FMV 落差%</div></div>
+    <div class="stat-card"><div class="sv" id="s-rfmv">—</div><div class="sl">Renaiss 總 FMV (USD)</div></div>
+    <div class="stat-card"><div class="sv" id="s-ifmv">—</div><div class="sl">真實市場總 FMV (USD)</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('gap')">📊 FMV 落差排行</div>
+    <div class="tab" onclick="switchTab('wallet')">🐋 鯨魚錢包</div>
+    <div class="tab" onclick="switchTab('packs')">🎲 開包 True EV</div>
+  </div>
+
+  <!-- Tab: FMV Gap -->
+  <div class="panel active" id="panel-gap">
+    <div class="bar">
+      <input id="q" placeholder="搜尋卡名 / serial…" oninput="renderGap()"/>
+      <select id="gap-filter" onchange="renderGap()">
+        <option value="all">全部</option>
+        <option value="over">Renaiss 虛高 (gap &gt; 0)</option>
+        <option value="under">Renaiss 低估 (gap &lt; 0)</option>
+        <option value="big">大落差 (&gt;100% or &lt;−30%)</option>
+        <option value="high-conf">高信心（Index 高信心）</option>
+      </select>
+      <select id="conf-filter" onchange="renderGap()">
+        <option value="">全部信心</option>
+        <option value="high">高信心</option>
+        <option value="medium">中信心</option>
+        <option value="low">低信心</option>
+      </select>
+      <span class="muted" id="gap-count"></span>
+    </div>
+    <div class="tbl-wrap"><div id="gap-table" class="muted">載入中…</div></div>
+  </div>
+
+  <!-- Tab: Wallets -->
+  <div class="panel" id="panel-wallet">
+    <div class="bar">
+      <input id="wq" placeholder="搜尋錢包地址…" oninput="renderWallet()"/>
+      <span class="muted" id="wallet-count"></span>
+    </div>
+    <div class="tbl-wrap"><div id="wallet-table" class="muted">載入中…</div></div>
+  </div>
+
+  <!-- Tab: Packs True EV -->
+  <div class="panel" id="panel-packs">
+    <div class="sub" style="margin-bottom:12px;">
+      以下是每個卡機的 True EV 重算：把 Renaiss 官方 FMV 換成 Index API 真實市場價，
+      重新計算期望值，讓你看到官方 EV 背後的真實風險。
+    </div>
+    <div id="packs-true-ev" class="muted">載入中…</div>
+  </div>
+
+</main>
+<script>
+const fmt = (n,d=0) => (n==null||isNaN(+n)) ? "—" : Number(n).toLocaleString(undefined,{maximumFractionDigits:d});
+const fmtUsd = (n,d=0) => n==null ? "—" : "$"+fmt(n,d);
+const esc = s => String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+let GAP_DATA = [], WALLET_DATA = [], PACK_DATA = [];
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    const names=['gap','wallet','packs'];
+    t.classList.toggle('active', names[i]===name);
+  });
+  document.querySelectorAll('.panel').forEach((p,i)=>{
+    const names=['gap','wallet','packs'];
+    p.classList.toggle('active', names[i]===name);
+  });
+}
+
+// ─── Load all data ─────────────────────────────────────────────────────────────
+async function loadAll() {
+  const [gapR, walletR, packsR] = await Promise.all([
+    fetch('/api/intelligence/fmv-gap?limit=2000').then(r=>r.json()).catch(()=>({items:[]})),
+    fetch('/api/intelligence/wallets?limit=200').then(r=>r.json()).catch(()=>({wallets:[]})),
+    fetch('/api/packs/live').then(r=>r.json()).catch(()=>({packs:[]})),
+  ]);
+
+  GAP_DATA    = gapR.items || [];
+  WALLET_DATA = walletR.wallets || [];
+  PACK_DATA   = packsR.packs || [];
+
+  // fill stats from API
+  const stats = gapR.stats || {};
+  document.getElementById('s-total').textContent = fmt(stats.total_tokens);
+  document.getElementById('s-over').textContent  = fmt(stats.over_100pct);
+  document.getElementById('s-under').textContent = fmt(stats.under_20pct);
+  document.getElementById('s-gap').textContent   = (stats.avg_gap_pct > 0 ? "+" : "") + fmt(stats.avg_gap_pct,1) + "%";
+  document.getElementById('s-rfmv').textContent  = fmtUsd(stats.total_renaiss_fmv);
+  document.getElementById('s-ifmv').textContent  = fmtUsd(stats.total_index_fmv);
+
+  document.getElementById('meta').textContent =
+    `共 ${stats.queried || 0}/${stats.total_tokens || 0} 枚已查真實市場價 ｜ 平均 Renaiss FMV 落差 ${(stats.avg_gap_pct>0?"+":"")+fmt(stats.avg_gap_pct,1)}% ｜ 更新於 ${new Date().toLocaleString()}`;
+
+  renderGap();
+  renderWallet();
+  renderPacksEV();
+}
+
+// ─── FMV Gap table ─────────────────────────────────────────────────────────────
+function sparkHtml(sparkJson) {
+  if (!sparkJson) return "—";
+  let arr; try { arr = JSON.parse(sparkJson); } catch { return "—"; }
+  if (!arr.length) return "—";
+  const max = Math.max(...arr, 1);
+  return '<div class="sparkline">' +
+    arr.map(v => `<span style="height:${Math.round(v/max*24)}px" title="$${(v/100).toFixed(0)}"></span>`).join("") +
+    '</div>';
+}
+
+function renderGap() {
+  const q      = document.getElementById('q').value.trim().toLowerCase();
+  const filter = document.getElementById('gap-filter').value;
+  const conf   = document.getElementById('conf-filter').value;
+
+  let rows = GAP_DATA.filter(r => {
+    if (q && !(r.name||'').toLowerCase().includes(q) && !(r.serial||'').toLowerCase().includes(q)) return false;
+    if (filter === 'over'     && !(r.fmv_gap_pct > 0)) return false;
+    if (filter === 'under'    && !(r.fmv_gap_pct < 0)) return false;
+    if (filter === 'big'      && !(r.fmv_gap_pct > 100 || r.fmv_gap_pct < -30)) return false;
+    if (filter === 'high-conf'&& r.index_confidence !== 'high') return false;
+    if (conf   && r.index_confidence !== conf) return false;
+    return true;
+  });
+
+  document.getElementById('gap-count').textContent = `${rows.length} 筆`;
+
+  if (!rows.length) {
+    document.getElementById('gap-table').innerHTML = '<div class="muted">無符合條件的資料</div>';
+    return;
+  }
+
+  const tbody = rows.slice(0, 300).map(r => {
+    const gapPct = r.fmv_gap_pct;
+    const gapCls = gapPct > 0 ? 'gap-pos' : 'gap-neg';
+    const gapSign = gapPct > 0 ? "+" : "";
+    const confCls = `conf-${r.index_confidence || 'low'}`;
+    const img = r.cert_item || r.image_url
+      ? `<img class="thumb" loading="lazy" src="${esc(r.cert_item||r.image_url)}" onerror="this.src=''"/>`
+      : `<div class="thumb"></div>`;
+    const pillTag = gapPct > 50 ? `<span class="pill pill-r">FMV虛高</span>`
+                  : gapPct < -30 ? `<span class="pill pill-g">低估</span>` : "";
+    const holder = r.holder_short ? `<span style="font-family:monospace;font-size:10px">${esc(r.holder_short)}</span>` : "—";
+    const indexLink = r.index_href
+      ? `<a href="https://index.renaissos.com${r.index_href}" target="_blank" style="color:#58a6ff">Index↗</a>` : "";
+
+    return `<tr>
+      <td>${img}</td>
+      <td>${esc((r.name||'').slice(0,55))} ${pillTag}</td>
+      <td class="num">${fmtUsd(r.renaiss_fmv,0)}</td>
+      <td class="num">${fmtUsd(r.index_price_usd,0)}</td>
+      <td class="num ${gapCls}">${gapSign}${fmt(gapPct,0)}%</td>
+      <td class="num ${gapCls}">${gapPct>0?"+":""}${fmtUsd(r.fmv_gap_usd,0)}</td>
+      <td class="${confCls}">${r.index_confidence||"?"}</td>
+      <td>${r.index_last_sale||"—"}</td>
+      <td>${holder}</td>
+      <td>${indexLink}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById('gap-table').innerHTML = `
+    <table>
+      <thead><tr>
+        <th></th>
+        <th>卡名</th>
+        <th class="num">Renaiss FMV</th>
+        <th class="num">真實市場價</th>
+        <th class="num">落差%</th>
+        <th class="num">落差 USD</th>
+        <th>信心</th>
+        <th>最近成交</th>
+        <th>持有人</th>
+        <th>連結</th>
+      </tr></thead>
+      <tbody>${tbody}</tbody>
+    </table>`;
+}
+
+// ─── Wallet table ──────────────────────────────────────────────────────────────
+function renderWallet() {
+  const q = document.getElementById('wq').value.trim().toLowerCase();
+  let rows = WALLET_DATA.filter(w =>
+    !q || (w.holder||'').toLowerCase().includes(q)
+  );
+  document.getElementById('wallet-count').textContent = `${rows.length} 個錢包`;
+
+  if (!rows.length) {
+    document.getElementById('wallet-table').innerHTML = '<div class="muted">無資料</div>';
+    return;
+  }
+
+  const tbody = rows.slice(0, 100).map(w => {
+    const gapCls = (w.avg_fmv_gap_pct||0) > 20 ? 'gap-pos' : (w.avg_fmv_gap_pct||0) < -20 ? 'gap-neg' : '';
+    const explorerUrl = `https://bscscan.com/address/${w.holder}`;
+    const lossRisk = w.total_renaiss_fmv && w.total_index_fmv
+      ? (w.total_renaiss_fmv - w.total_index_fmv) : null;
+    return `<tr>
+      <td><a href="${explorerUrl}" target="_blank" style="color:#58a6ff;font-family:monospace;font-size:11px">${(w.holder||'').slice(0,18)}…</a></td>
+      <td class="num">${fmt(w.token_count)}</td>
+      <td class="num">${fmtUsd(w.total_renaiss_fmv)}</td>
+      <td class="num">${fmtUsd(w.total_index_fmv)}</td>
+      <td class="num ${gapCls}">${w.avg_fmv_gap_pct!=null ? (w.avg_fmv_gap_pct>0?"+":"")+fmt(w.avg_fmv_gap_pct,1)+"%" : "—"}</td>
+      <td class="num ${lossRisk>0?'red':''}">${lossRisk!=null ? (lossRisk>0?"−":"+")+"$"+fmt(Math.abs(lossRisk)) : "—"}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc(w.top_card_name||'')}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById('wallet-table').innerHTML = `
+    <table class="wt">
+      <thead><tr>
+        <th>錢包地址</th>
+        <th class="num">持有數</th>
+        <th class="num">Renaiss FMV</th>
+        <th class="num">真實 FMV</th>
+        <th class="num">平均落差%</th>
+        <th class="num">帳面風險 USD</th>
+        <th>最高值持倉</th>
+      </tr></thead>
+      <tbody>${tbody}</tbody>
+    </table>`;
+}
+
+// ─── Packs True EV ─────────────────────────────────────────────────────────────
+function renderPacksEV() {
+  if (!PACK_DATA.length) {
+    document.getElementById('packs-true-ev').innerHTML = '<div class="muted">無資料</div>';
+    return;
+  }
+  const rows = PACK_DATA.map(p => {
+    const offEv  = p.official_ev_usd || 0;
+    const empEv  = p.empirical_ev_usd;
+    const price  = p.price_usd || 0;
+    const ratio  = offEv / price;
+    const empDelta = empEv != null ? ((empEv - offEv)/offEv*100) : null;
+    const tierHtml = Object.entries(p.tier_distribution || {}).map(([t,n])=>
+      `<span style="font-size:10px;padding:1px 6px;background:#21262d;border-radius:6px;margin-right:3px">${t}:${n}</span>`
+    ).join("");
+    return `<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px;margin-bottom:12px;">
+      <div style="font-weight:700;font-size:15px;margin-bottom:8px">${esc(p.name)}
+        <span style="font-size:11px;color:#8b949e;">${p.pack_type||''}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;font-size:13px;">
+        <div><div style="color:#8b949e;font-size:11px">開抽價</div><b>${fmtUsd(price)}</b></div>
+        <div><div style="color:#8b949e;font-size:11px">官方 EV</div><b>${fmtUsd(offEv)}</b> <span style="color:#8b949e;font-size:11px">(${fmt(ratio,1)}×)</span></div>
+        <div><div style="color:#8b949e;font-size:11px">經驗 EV（最近 ${p.recent_pulls_n} 筆）</div>
+          <b>${fmtUsd(empEv)}</b>
+          ${empDelta!=null ? `<span class="${empDelta>0?'green':'red'}" style="font-size:11px"> ${empDelta>0?"+":""}${fmt(empDelta,1)}%</span>` : ""}
+        </div>
+        <div><div style="color:#8b949e;font-size:11px">頭獎 FMV</div><b>${fmtUsd(p.featured_fmv_usd)}</b></div>
+      </div>
+      <div style="margin-top:8px">${tierHtml}</div>
+      <div style="margin-top:8px;font-size:12px;color:#8b949e;">
+        ⚠️ 經驗 EV 使用 Renaiss 官方 FMV 計算。若 FMV 整體虛高，實際 EV 可能更低。
+      </div>
+    </div>`;
+  }).join("");
+  document.getElementById('packs-true-ev').innerHTML = rows;
+}
+
+loadAll();
+
+// ─── Build Progress Banner ─────────────────────────────────────────────────────
+async function checkBuildStatus() {
+  try {
+    const d = await fetch('/api/build/status').then(r=>r.json());
+    const banner = document.getElementById('build-banner');
+    const s = d.stats || {};
+    if (!s.total) { banner.style.display = 'none'; return; }
+
+    banner.style.display = 'block';
+    const pct = s.pct || 0;
+    document.getElementById('build-bar').style.width = pct + '%';
+
+    if (d.is_running) {
+      document.getElementById('build-pct').textContent = `⚙️ 建置中 ${s.queried}/${s.total} (${pct}%)`;
+      document.getElementById('build-eta').textContent = d.days_to_complete
+        ? `每日 95 筆配額，約 ${d.days_to_complete} 天完成` : '';
+      setTimeout(checkBuildStatus, 30000);
+    } else {
+      // Not running — show quota/schedule info
+      const resetInfo = d.quota_reset_utc ? ` · 配額重置於 ${d.quota_reset_utc}` : '';
+      document.getElementById('build-pct').textContent =
+        `📊 ${s.queried}/${s.total} 已查 (${pct}%) · ${s.priced} 枚有真實市價`;
+      document.getElementById('build-eta').textContent =
+        `下次: 每日 08:10 台灣時間 · 每日 95 筆 · 約 ${d.days_to_complete || '?'} 天完成${resetInfo}`;
+    }
+  } catch(e) {}
+}
+checkBuildStatus();
+</script>
+</body>
+</html>
