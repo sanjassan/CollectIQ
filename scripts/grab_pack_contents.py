@@ -20,6 +20,7 @@ grab_pack_contents.py — 抓「卡機內容目錄」（開抽前就能拿到的
 from __future__ import annotations
 
 import json
+import random
 import re
 import sys
 import time
@@ -35,26 +36,48 @@ sys.path.insert(0, str(ROOT))          # renaiss_api.py 在專案根目錄
 import ledger  # noqa: E402
 
 TRPC = "https://www.renaiss.xyz/api/trpc"
-HEADERS = {"accept": "application/json", "user-agent": "Mozilla/5.0",
-           "referer": "https://www.renaiss.xyz/"}
+# 擬真瀏覽器標頭，降低被 WAF/風控擋下的機率（僅送正常瀏覽會送的欄位）。
+HEADERS = {
+    "accept": "*/*",
+    "accept-language": "en-US,en;q=0.9",
+    "user-agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/126.0.0.0 Safari/537.36"),
+    "referer": "https://www.renaiss.xyz/",
+    "origin": "https://www.renaiss.xyz",
+    "sec-fetch-dest": "empty", "sec-fetch-mode": "cors", "sec-fetch-site": "same-origin",
+}
 TIERS = ["TOP", "S", "A", "B", "C", "D"]
 # 圖片 URL 形如 .../pokemon-cards/PSA136046059/card.jpg → 取資料夾名當證號
 CERT_RE = re.compile(r"/([A-Za-z]{2,5}\d{4,})/[^/]+\.(?:jpg|jpeg|png|webp)", re.I)
 
+# 全域禮貌節流：所有對外請求共用同一個 Session，並在請求間插入抖動延遲，
+# 避免對站方造成突發流量而被限流 / 封鎖。
+_SESSION = requests.Session()
+_SESSION.headers.update(HEADERS)
 
-def _get(proc: str, payload: dict, retries: int = 3) -> dict:
+
+def _polite_sleep(base: float = 0.8, jitter: float = 0.6) -> None:
+    time.sleep(base + random.random() * jitter)
+
+
+def _get(proc: str, payload: dict, retries: int = 5) -> dict:
+    """打 Renaiss tRPC，遇 429/5xx 以指數退避 + 抖動重試，尊重 Retry-After。"""
     inp = urllib.parse.quote(json.dumps({"0": {"json": payload}}))
     url = f"{TRPC}/{proc}?batch=1&input={inp}"
     last = None
     for i in range(retries):
         try:
-            r = requests.get(url, headers=HEADERS, timeout=45)
-            if r.status_code in (429, 502, 503):
-                last = f"{r.status_code}"; time.sleep(2 * (i + 1)); continue
+            r = _SESSION.get(url, timeout=45)
+            if r.status_code in (403, 429) or r.status_code >= 500:
+                ra = r.headers.get("retry-after")
+                wait = float(ra) if (ra and ra.isdigit()) else (2 ** i + random.random() * 2)
+                last = f"HTTP {r.status_code}"
+                time.sleep(min(wait, 30)); continue
             r.raise_for_status()
             return r.json()[0]["result"]["data"]["json"]
         except Exception as e:
-            last = e; time.sleep(1.5 * (i + 1))
+            last = e; time.sleep(min(2 ** i + random.random() * 2, 30))
     raise RuntimeError(f"{proc} failed: {last}")
 
 
@@ -142,7 +165,7 @@ def grab_all(core, only: str | None = None) -> dict:
               f"{n:>5} 張  {tcs}  {flag}")
         out.append({"pack_id": p.get("id"), "name": p.get("name"),
                     "stage": p.get("stage"), **res})
-        time.sleep(0.6)
+        _polite_sleep()
     core.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('pack_content_grabbed_at',?)",
                  (datetime.now(timezone.utc).isoformat(),))
     core.commit()
@@ -178,7 +201,7 @@ def enrich_market(core, limit: int = 90, pack_id: str | None = None) -> dict:
     """, (*params, limit)).fetchall()
 
     ok = miss = quota = 0
-    consecutive_429 = 0
+    consecutive_fail = 0
     for (cert, rb, _tr, _lv) in rows:
         try:
             g = api.get_graded(cert)
@@ -188,18 +211,20 @@ def enrich_market(core, limit: int = 90, pack_id: str | None = None) -> dict:
         if price is None:
             # 分辨配額用盡 vs 查無此卡：粗略以連續失敗判定
             miss += 1
-            consecutive_429 += 1
-            if consecutive_429 >= 8:
+            consecutive_fail += 1
+            if consecutive_fail >= 8:
                 quota = 1
                 break
+            _polite_sleep(0.5, 0.5)
             continue
-        consecutive_429 = 0
+        consecutive_fail = 0
         luck = round(price / rb, 4) if rb else None
         core.execute("""
             UPDATE pack_content
             SET market_price_usd=?, luck_value=?, updated_at=?
             WHERE cert=?""", (price, luck, now, cert))
         ok += 1
+        _polite_sleep(0.5, 0.5)   # 對 Index API 也放慢，避免觸發風控
     core.commit()
     return {"enriched": ok, "missed": miss, "quota_hit": bool(quota),
             "candidates": len(rows)}
@@ -237,6 +262,22 @@ def main() -> int:
               f"（查無 {st['missed']}"
               f"{'，配額用盡' if st['quota_hit'] else ''}）")
         show_gems(core)
+        return 0
+    if args and args[0] == "--daily":
+        # 排程入口：先刷全卡機目錄（Renaiss tRPC，無每日上限），
+        # 再用當日剩餘 Index 配額補市價（預設 90，保守留在 100/日 之下）。
+        limit = int(args[1]) if len(args) > 1 else 90
+        t0 = time.time()
+        gs = grab_all(core)
+        es = enrich_market(core, limit)
+        n, ncert, nmkt = core.execute(
+            "SELECT COUNT(*), COUNT(cert), COUNT(market_price_usd) FROM pack_content"
+        ).fetchone()
+        print(f"[daily] {datetime.now(timezone.utc):%F %T}Z "
+              f"目錄 {gs['packs']}台/{gs['cards']}張 · "
+              f"補市價 {es['enriched']}（查無{es['missed']}"
+              f"{'，配額盡' if es['quota_hit'] else ''}） · "
+              f"累計市價 {nmkt}/{ncert} ({time.time()-t0:.1f}s)")
         return 0
     only = args[0] if args else None
     t0 = time.time()

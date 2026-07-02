@@ -546,6 +546,106 @@ def api_core_token(token_id):
     })
 
 
+@app.route("/api/core/packs")
+def api_core_packs():
+    """未開／已開抽卡機總覽（pack_content 快照）。
+    每台卡機：slot 總數、distinct 卡數、buyback 區間、最高價卡縮圖、有無市價。
+    ?stage=countdown 只看即將開的。"""
+    conn = _core_db()
+    if not conn:
+        return jsonify({"available": False, "note": "尚未建立 collectiq_core.db"})
+    stage = request.args.get("stage")
+    where = "WHERE pack_stage = ?" if stage else ""
+    args = (stage,) if stage else ()
+    rows = conn.execute(f"""
+        SELECT pack_id, pack_name, pack_stage,
+               COUNT(*) AS slots,
+               COUNT(DISTINCT item_id) AS distinct_cards,
+               MIN(renaiss_buyback_usd) AS min_buyback,
+               MAX(renaiss_buyback_usd) AS max_buyback,
+               COUNT(market_price_usd) AS priced,
+               MAX(luck_value) AS top_luck,
+               MAX(captured_at) AS captured_at
+        FROM pack_content
+        {where}
+        GROUP BY pack_id
+        ORDER BY CASE pack_stage WHEN 'countdown' THEN 0 WHEN 'active' THEN 1
+                 ELSE 2 END, max_buyback DESC
+    """, args).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        top = conn.execute("""
+            SELECT name, image_url, renaiss_buyback_usd
+            FROM pack_content WHERE pack_id=?
+            ORDER BY renaiss_buyback_usd DESC LIMIT 1""", (d["pack_id"],)).fetchone()
+        d["top_card"] = dict(top) if top else None
+        out.append(d)
+    conn.close()
+    return jsonify({"available": True, "count": len(out), "packs": out})
+
+
+@app.route("/api/core/pack/<pack_id>")
+def api_core_pack_cards(pack_id):
+    """單台卡機內所有卡（distinct 物理卡，附 slot 權重 / buyback / 市價 / luck）。
+    ?min_luck= 只看藏寶卡。"""
+    conn = _core_db()
+    if not conn:
+        return jsonify({"available": False})
+    min_luck = request.args.get("min_luck")
+    having = "HAVING MAX(luck_value) >= ?" if min_luck else ""
+    args = [pack_id]
+    if min_luck:
+        args.append(float(min_luck))
+    rows = conn.execute(f"""
+        SELECT item_id, name, tier, cert, grader, grade, year, image_url,
+               COUNT(*) AS slots,
+               MAX(renaiss_buyback_usd) AS renaiss_buyback_usd,
+               MAX(market_price_usd) AS market_price_usd,
+               MAX(luck_value) AS luck_value,
+               MAX(token_id) AS token_id
+        FROM pack_content WHERE pack_id=?
+        GROUP BY item_id
+        {having}
+        ORDER BY luck_value DESC, renaiss_buyback_usd DESC
+    """, args).fetchall()
+    meta = conn.execute(
+        "SELECT pack_name, pack_stage FROM pack_content WHERE pack_id=? LIMIT 1",
+        (pack_id,)).fetchone()
+    conn.close()
+    return jsonify({
+        "available": bool(rows),
+        "pack_id": pack_id,
+        "pack_name": meta["pack_name"] if meta else None,
+        "pack_stage": meta["pack_stage"] if meta else None,
+        "count": len(rows),
+        "cards": [dict(r) for r in rows],
+    })
+
+
+@app.route("/api/core/pack-gems")
+def api_core_pack_gems():
+    """跨卡機藏寶卡榜：pack_content 內 luck_value 最高者（含尚未開的卡機）。
+    ?min_luck=1.5 ?limit=60"""
+    conn = _core_db()
+    if not conn:
+        return jsonify({"available": False})
+    min_luck = float(request.args.get("min_luck", 1.5))
+    limit = int(request.args.get("limit", 60))
+    rows = conn.execute("""
+        SELECT pack_id, pack_name, pack_stage, item_id, name, tier, cert,
+               grader, grade, year, image_url,
+               renaiss_buyback_usd, market_price_usd, luck_value, token_id
+        FROM pack_content
+        WHERE luck_value >= ?
+        GROUP BY pack_id, item_id
+        ORDER BY luck_value DESC LIMIT ?
+    """, (min_luck, limit)).fetchall()
+    conn.close()
+    return jsonify({"available": True, "count": len(rows),
+                    "gems": [dict(r) for r in rows]})
+
+
 @app.route("/intelligence")
 def intelligence_page():
     """CollectIQ Price Intelligence — FMV 落差分析 / 鯨魚錢包 / True EV。"""
