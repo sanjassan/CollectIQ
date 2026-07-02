@@ -423,6 +423,129 @@ def api_live_ev():
     })
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CORE LEDGER — 統一核心帳本（data/collectiq_core.db）
+#  事件溯源後的成果：真持有者 / 幸運卡 / 獎勵進度 / 單卡完整轉移史
+# ═══════════════════════════════════════════════════════════════════════════════
+def _core_db():
+    import sqlite3 as _sq
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "collectiq_core.db")
+    if not os.path.exists(path):
+        return None
+    conn = _sq.connect(path)
+    conn.row_factory = _sq.Row
+    return conn
+
+
+@app.route("/api/core/lucky")
+def api_core_lucky():
+    """幸運卡（復活蛋）：真實市場價遠高於 Renaiss FMV，並附「現在在誰手中」。
+    參數：?min_luck=1.5 ?limit=50"""
+    conn = _core_db()
+    if not conn:
+        return jsonify({"available": False, "note": "尚未建立 collectiq_core.db"})
+    min_luck = float(request.args.get("min_luck", 1.5))
+    limit = int(request.args.get("limit", 50))
+    rows = conn.execute("""
+        SELECT s.token_id, d.name, d.character_name, d.image_url, d.image_local,
+               s.renaiss_fmv, s.index_price_usd, s.luck_value,
+               fh.status, fh.current_holder, fh.is_listed, fh.ask_price
+        FROM fmv_snapshots s
+        JOIN dim_card d ON d.token_id = s.token_id
+        LEFT JOIN fact_holding fh ON fh.token_id = s.token_id
+        WHERE s.luck_value >= ?
+          AND s.ts = (SELECT MAX(ts) FROM fmv_snapshots x WHERE x.token_id = s.token_id)
+        ORDER BY s.luck_value DESC LIMIT ?
+    """, (min_luck, limit)).fetchall()
+    conn.close()
+    return jsonify({"available": True, "count": len(rows),
+                    "cards": [dict(r) for r in rows]})
+
+
+@app.route("/api/core/holders")
+def api_core_holders():
+    """持有者排行 + 獎勵進度（伊布全款完成度）。?limit=30"""
+    conn = _core_db()
+    if not conn:
+        return jsonify({"available": False})
+    limit = int(request.args.get("limit", 30))
+    top = conn.execute("""
+        SELECT current_holder AS holder, COUNT(*) AS tokens
+        FROM fact_holding
+        WHERE status='held' AND current_holder IS NOT NULL
+        GROUP BY current_holder ORDER BY tokens DESC LIMIT ?
+    """, (limit,)).fetchall()
+    out = []
+    for r in top:
+        d = dict(r)
+        ev = conn.execute(
+            "SELECT detail FROM reward_status WHERE reward_type='eevee_full' AND holder=?",
+            (d["holder"],)).fetchone()
+        d["eevee"] = json.loads(ev["detail"]) if ev else None
+        runs = conn.execute(
+            "SELECT COUNT(*) FROM reward_status WHERE reward_type='serial_run' AND holder=?",
+            (d["holder"],)).fetchone()[0]
+        d["serial_runs"] = runs
+        lbl = conn.execute("SELECT label FROM dim_wallet WHERE address=?",
+                           (d["holder"],)).fetchone()
+        d["label"] = lbl["label"] if lbl else None
+        out.append(d)
+    conn.close()
+    return jsonify({"available": True, "holders": out})
+
+
+@app.route("/api/core/rewards")
+def api_core_rewards():
+    """獎勵狀態彙整：伊布全款 / 連號 / SBT。"""
+    conn = _core_db()
+    if not conn:
+        return jsonify({"available": False})
+    eevee = [dict(r) for r in conn.execute("""
+        SELECT holder, achieved, detail FROM reward_status
+        WHERE reward_type='eevee_full'
+        ORDER BY json_extract(detail,'$.count') DESC LIMIT 30""").fetchall()]
+    for e in eevee:
+        e["detail"] = json.loads(e["detail"]) if e.get("detail") else None
+    runs = [dict(r) for r in conn.execute("""
+        SELECT holder, detail FROM reward_status WHERE reward_type='serial_run'
+        LIMIT 50""").fetchall()]
+    for r in runs:
+        r["detail"] = json.loads(r["detail"]) if r.get("detail") else None
+    sbt = [dict(r) for r in conn.execute("""
+        SELECT holder, detail FROM reward_status WHERE reward_type='sbt'
+        LIMIT 50""").fetchall()]
+    for s in sbt:
+        s["detail"] = json.loads(s["detail"]) if s.get("detail") else None
+    conn.close()
+    return jsonify({"available": True, "eevee_full": eevee,
+                    "serial_runs": runs, "sbt": sbt})
+
+
+@app.route("/api/core/token/<token_id>")
+def api_core_token(token_id):
+    """單卡的完整鏈上轉移史（誰抽走、如何轉手、現在在誰手中）。"""
+    conn = _core_db()
+    if not conn:
+        return jsonify({"available": False})
+    card = conn.execute("SELECT * FROM dim_card WHERE token_id=?", (token_id,)).fetchone()
+    hold = conn.execute("SELECT * FROM fact_holding WHERE token_id=?", (token_id,)).fetchone()
+    hist = conn.execute("""
+        SELECT block_number, block_time, from_addr, to_addr, kind, tx_hash, confirmed
+        FROM ledger_transfers WHERE token_id=?
+        ORDER BY block_number, log_index""", (token_id,)).fetchall()
+    fmv = conn.execute("""
+        SELECT ts, renaiss_fmv, index_price_usd, luck_value FROM fmv_snapshots
+        WHERE token_id=? ORDER BY ts""", (token_id,)).fetchall()
+    conn.close()
+    return jsonify({
+        "available": bool(card or hist),
+        "card": dict(card) if card else None,
+        "holding": dict(hold) if hold else None,
+        "history": [dict(r) for r in hist],
+        "fmv_history": [dict(r) for r in fmv],
+    })
+
+
 @app.route("/intelligence")
 def intelligence_page():
     """CollectIQ Price Intelligence — FMV 落差分析 / 鯨魚錢包 / True EV。"""
