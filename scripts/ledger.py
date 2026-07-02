@@ -192,6 +192,39 @@ CREATE TABLE IF NOT EXISTS meta (
 """
 
 
+REORG_DEPTH = 15  # 區塊確定深度：head 之下未滿此深度視為未定案（confirmed=0）
+
+
+def ingest_transfer(core: sqlite3.Connection, tx_hash: str, log_index: int,
+                    block_number: int, block_time, token_id, from_addr, to_addr,
+                    pool, kind, chain_head: int,
+                    reorg_depth: int = REORG_DEPTH) -> None:
+    """冪等寫入單筆 Transfer。距鏈頭未滿 reorg_depth 的區塊標 confirmed=0。
+
+    用 INSERT OR IGNORE：已存在的 (tx_hash,log_index) 不覆蓋，避免把已定案列
+    降級。定案升級由 finalize_confirmations() 負責。
+    """
+    confirmed = 1 if (chain_head - block_number) >= reorg_depth else 0
+    core.execute(
+        "INSERT OR IGNORE INTO ledger_transfers"
+        "(tx_hash,log_index,block_number,block_time,token_id,"
+        " from_addr,to_addr,pool,kind,confirmed) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (tx_hash, log_index, block_number, block_time, str(token_id),
+         from_addr, to_addr, pool, kind, confirmed))
+
+
+def finalize_confirmations(core: sqlite3.Connection, chain_head: int,
+                           reorg_depth: int = REORG_DEPTH) -> int:
+    """把已達確定深度的未定案列升級 confirmed=1。回傳升級筆數。"""
+    cutoff = chain_head - reorg_depth
+    cur = core.execute(
+        "UPDATE ledger_transfers SET confirmed=1 "
+        "WHERE confirmed=0 AND block_number <= ?", (cutoff,))
+    core.commit()
+    return cur.rowcount
+
+
 def connect(path: Path | str = CORE_DB) -> sqlite3.Connection:
     """開啟核心 DB 連線，套用 WAL 與外鍵設定。"""
     conn = sqlite3.connect(str(path))

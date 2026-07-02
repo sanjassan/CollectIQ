@@ -48,6 +48,24 @@ from track_pulls_onchain import (  # 重用穩定的多節點 RPC + 常數
     RpcPool, NFT, TRANSFER_TOPIC, ZERO, _addr, _load_market,
 )
 
+try:  # 統一核心帳本（RAW 全記錄、reorg 安全）；缺席不影響 live_pool 運作
+    import ledger as _ledger
+    _CORE = _ledger.init_db()
+except Exception as _e:  # pragma: no cover
+    _ledger = None
+    _CORE = None
+    print(f"[core] ledger 未啟用：{_e}")
+
+
+def _iso(ts) -> str | None:
+    if ts is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(ts), tz=timezone.utc).isoformat()
+    except Exception:
+        return None
+
+
 DATA = ROOT / "data"
 LIVE_DB = DATA / "live_pool.db"
 ONCHAIN_DB = DATA / "onchain_pulls.db"
@@ -375,12 +393,23 @@ def scan_forward(conn, rpcs, pool: str, from_block: int, market: dict) -> int:
                 mk = market.get(tid) or {}
                 txh = lg["transactionHash"].hex()
                 txh = txh if txh.startswith("0x") else "0x" + txh
+                # RAW 核心帳本：全記錄每筆 Transfer（含 reorg 未定案旗標）
+                if _CORE is not None:
+                    k = _classify(pool, frm, to)
+                    _ledger.ingest_transfer(
+                        _CORE, txh, lg["logIndex"], bn, _iso(block_ts[bn]),
+                        tid, frm, to, pool,
+                        k if k != "other" else _ledger.KIND_XFER, latest)
                 _apply_event(conn, pool, bn, lg["logIndex"], block_ts[bn], tid, frm, to,
                              txh, mk.get("name"), mk.get("fmv"))
                 new_ev += 1
             cur = end + 1
             time.sleep(0.15)
     conn.commit()
+    if _CORE is not None:
+        promoted = _ledger.finalize_confirmations(_CORE, latest)
+        if promoted:
+            print(f"[core] 定案升級 {promoted} 筆（confirmed 0→1）")
     return latest, new_ev
 
 
