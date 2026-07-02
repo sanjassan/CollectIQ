@@ -12,6 +12,7 @@ Step 2（本檔目前實作）：backfill_transfers()
 """
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import sys
@@ -26,6 +27,7 @@ DATA = ROOT / "data"
 ONCHAIN_DB = DATA / "onchain_pulls.db"
 LIVE_DB = DATA / "live_pool.db"
 COLLECTIQ_DB = DATA / "collectiq.db"
+MARKET_LISTED_JSON = DATA / "marketplace_listed.json"
 
 ZERO = "0x0000000000000000000000000000000000000000"
 
@@ -251,6 +253,90 @@ def backfill_holdings(core: sqlite3.Connection) -> dict:
     return {"holdings": len(payload)}
 
 
+def record_market_snapshot(core: sqlite3.Connection, items: list[dict],
+                           ts: str, source: str = "marketplace") -> dict:
+    """把一份掛牌快照 diff 成市場事件並 append 進 ledger_market（冪等、可重用）。
+
+    規則（對每個 token 的最新已知事件比對）：
+      現在掛牌、之前無/已下架/已售 → list
+      現在掛牌、之前掛牌但價格不同 → relist
+      現在掛牌、價格相同           → no-op
+      之前掛牌、現在不在快照中     → delist
+    未來 sync_renaiss_marketplace 可直接呼叫本函數。
+    """
+    # 每 token 最新市場事件狀態
+    last: dict[str, tuple] = {}
+    for (tid, ek, price, t) in core.execute(
+            "SELECT token_id, event_kind, price_usd, ts FROM ledger_market "
+            "ORDER BY ts").fetchall():
+        last[str(tid)] = (ek, price)  # 後者覆蓋 → 留最新
+
+    holders = {str(t): h for (t, h) in core.execute(
+        "SELECT token_id, current_holder FROM fact_holding").fetchall()}
+
+    events = []
+    cur_listed: dict[str, float] = {}
+    for it in items:
+        if not it.get("is_listed"):
+            continue
+        tid = str(it.get("token_id"))
+        price = it.get("ask_price")
+        cur_listed[tid] = price
+        prev = last.get(tid)
+        seller = holders.get(tid)
+        if prev is None or prev[0] in (ledger.MKT_DELIST, ledger.MKT_SALE):
+            events.append((tid, it.get("serial"), ledger.MKT_LIST, price, seller, None, ts, source))
+        elif prev[0] in (ledger.MKT_LIST, ledger.MKT_RELIST) and prev[1] != price:
+            events.append((tid, it.get("serial"), ledger.MKT_RELIST, price, seller, None, ts, source))
+        # 同價續掛：no-op
+
+    # 之前掛牌、現在消失 → delist
+    for tid, (ek, price) in last.items():
+        if ek in (ledger.MKT_LIST, ledger.MKT_RELIST) and tid not in cur_listed:
+            events.append((tid, None, ledger.MKT_DELIST, price, holders.get(tid), None, ts, source))
+
+    core.executemany(
+        "INSERT OR IGNORE INTO ledger_market"
+        "(token_id,serial,event_kind,price_usd,seller,buyer,ts,source) "
+        "VALUES(?,?,?,?,?,?,?,?)", events)
+    core.commit()
+    return {"events": len(events)}
+
+
+def backfill_market(core: sqlite3.Connection) -> dict:
+    """從當前掛牌快照建立市場事件基線。"""
+    if not MARKET_LISTED_JSON.exists():
+        return {"events": 0}
+    items = json.loads(MARKET_LISTED_JSON.read_text())
+    ts = datetime.fromtimestamp(
+        MARKET_LISTED_JSON.stat().st_mtime, tz=timezone.utc).isoformat()
+    return record_market_snapshot(core, items, ts, source="marketplace_backfill")
+
+
+def backfill_fmv_snapshots(core: sqlite3.Connection) -> dict:
+    """種下 FMV 快照基線（renaiss/index/幸運值），append-only。"""
+    if not COLLECTIQ_DB.exists():
+        return {"snaps": 0}
+    src = sqlite3.connect(str(COLLECTIQ_DB))
+    rows = src.execute(
+        "SELECT token_id, renaiss_fmv, index_price_usd, index_confidence, updated_at "
+        "FROM tokens").fetchall()
+    src.close()
+    default_ts = datetime.now(timezone.utc).isoformat()
+    payload = []
+    for (tid, rf, idx, conf, upd) in rows:
+        if rf is None and idx is None:
+            continue
+        luck = (idx / rf) if (rf and idx and rf > 0) else None
+        payload.append((str(tid), upd or default_ts, rf, idx, conf, luck, "collectiq_backfill"))
+    core.executemany(
+        "INSERT OR IGNORE INTO fmv_snapshots"
+        "(token_id,ts,renaiss_fmv,index_price_usd,index_confidence,luck_value,source) "
+        "VALUES(?,?,?,?,?,?,?)", payload)
+    core.commit()
+    return {"snaps": len(payload)}
+
+
 def main() -> int:
     core = ledger.init_db()
     print("[migrate] backfill_transfers ...")
@@ -284,6 +370,22 @@ def main() -> int:
         "SELECT status, COUNT(*) FROM fact_holding GROUP BY status "
         "ORDER BY 2 DESC").fetchall()
     print(f"[migrate] fact_holding={hs['holdings']} 狀態分布: {st_dist}")
+
+    print("[migrate] backfill_market ...")
+    ms = backfill_market(core)
+    mk_dist = core.execute(
+        "SELECT event_kind, COUNT(*) FROM ledger_market GROUP BY event_kind").fetchall()
+    print(f"[migrate] ledger_market 事件 {ms['events']} 分布: {mk_dist}")
+
+    print("[migrate] backfill_fmv_snapshots ...")
+    fs = backfill_fmv_snapshots(core)
+    lucky = core.execute(
+        "SELECT COUNT(*) FROM fmv_snapshots WHERE luck_value >= 1.5").fetchone()[0]
+    print(f"[migrate] fmv_snapshots={fs['snaps']}（幸運卡 luck>=1.5: {lucky}）")
+
+    core.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('market_fmv_backfilled_at',?)",
+                 (datetime.now(timezone.utc).isoformat(),))
+    core.commit()
     return 0
 
 
