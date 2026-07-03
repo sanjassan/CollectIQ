@@ -1913,6 +1913,45 @@ _POOL_BY_SLUG = {
 }
 
 
+# 共用 ERC721 NFT 合約（所有卡機的卡都鑄在這）
+_NFT_CONTRACT = "0xF8646A3Ca093e97Bb404c3b25e675C0394DD5b30"
+_INV_CACHE = {}  # pool -> (ts, balance)
+
+
+def _rpc_nodes():
+    """優先用 BNB_RPC（帶 key，逗號/空白分隔）；沒有就退公用 dataseed。"""
+    env = os.getenv("BNB_RPC", "").replace(",", " ").split()
+    return [r for r in env if r] or [
+        "https://bsc-dataseed.binance.org",
+        "https://bsc-dataseed1.defibit.io",
+        "https://bsc-dataseed1.ninicoin.io",
+    ]
+
+
+def _pool_inventory(pool_addr, ttl=60):
+    """該卡機池目前在鏈上還握著幾張 NFT（= 現在池裡剩幾張）。快取 60s。"""
+    import requests as _req
+    p = pool_addr.lower()
+    now = time.time()
+    hit = _INV_CACHE.get(p)
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    data = "0x70a08231" + p[2:].rjust(64, "0")  # balanceOf(address)
+    bal = None
+    for node in _rpc_nodes():
+        try:
+            r = _req.post(node, json={"jsonrpc": "2.0", "id": 1, "method": "eth_call",
+                          "params": [{"to": _NFT_CONTRACT, "data": data}, "latest"]}, timeout=8)
+            res = r.json().get("result")
+            if res and res != "0x":
+                bal = int(res, 16); break
+        except Exception:
+            continue
+    if bal is not None:
+        _INV_CACHE[p] = (now, bal)
+    return bal
+
+
 def _pool_activity(pool_addr, recent_n=25):
     """從 onchain_pulls 算單一抽卡池的：總抽數、最近 feed、高價門檻(p99)、
     高價抽頻率、最長乾旱間隔排行。全部是真實鏈上資料。"""
@@ -1981,6 +2020,7 @@ def api_pack_activity():
              "custody": slug not in _POOL_BY_SLUG, "onchain": None}
         pool = _POOL_BY_SLUG.get(slug)
         if pool:
+            m["pool_inventory"] = _pool_inventory(pool)
             act = _pool_activity(pool)
             if act:
                 # 用 Renaiss recentOpenedPacks 補上官方 tier（依 token_id 對應到最近 feed）
