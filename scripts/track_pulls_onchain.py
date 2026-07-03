@@ -213,6 +213,14 @@ def main() -> int:
     row_last = conn.execute("SELECT v FROM state WHERE k='last_block'").fetchone()
     last = row_last[0] if row_last else f"(未推進，起點 {start})"
 
+    # 同步新鮮度：讓前端能分辨「真的同步落後」vs「只是最近沒人抽卡」。
+    # synced_block 追到 head、synced_ts 為本輪 wall-clock；兩者一起看才是真實延遲。
+    synced_block = int(row_last[0]) if row_last else start - 1
+    conn.execute("INSERT OR REPLACE INTO state VALUES ('head_block', ?)", (str(latest),))
+    conn.execute("INSERT OR REPLACE INTO state VALUES ('synced_block', ?)", (str(synced_block),))
+    conn.execute("INSERT OR REPLACE INTO state VALUES ('synced_ts', ?)", (str(int(time.time())),))
+    conn.commit()
+
     # 即時市場比對：列出本輪「剛抽出」且有市場 FMV 的卡（高價在前）
     hot = conn.execute(
         """

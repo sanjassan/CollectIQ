@@ -97,11 +97,20 @@ def api_pulls():
            f"WHERE {' AND '.join(where)} ORDER BY block_time DESC, log_index DESC LIMIT ?")
     rows = conn.execute(sql, params + [limit]).fetchall()
     last_block_time = conn.execute("SELECT MAX(block_time) FROM onchain_pulls").fetchone()[0]
-    try:
-        cur = conn.execute("SELECT v FROM state WHERE k='last_block'").fetchone()
-        last_block = int(cur[0]) if cur else None
-    except Exception:
-        last_block = None
+
+    def _state(k):
+        try:
+            r = conn.execute("SELECT v FROM state WHERE k=?", (k,)).fetchone()
+            return int(r[0]) if r else None
+        except Exception:
+            return None
+
+    last_block  = _state("last_block")
+    head_block  = _state("head_block")
+    synced_ts   = _state("synced_ts")     # 本輪 wall-clock：多久前確認追到 head
+    synced_block = _state("synced_block") or last_block
+    # 真實同步落後 = head 與已同步區塊差；synced_ts 老代表爬蟲本身停了。
+    sync_behind_blocks = (head_block - synced_block) if (head_block and synced_block) else None
     conn.close()
     pulls = []
     for r in rows:
@@ -119,8 +128,12 @@ def api_pulls():
         })
     return jsonify({
         "pulls": pulls,
-        "last_block_time": last_block_time,
+        "last_block_time": last_block_time,   # 最近一次「抽卡」的時間（非同步延遲！）
         "last_block": last_block,
+        "head_block": head_block,             # 爬蟲上輪看到的鏈頭
+        "synced_block": synced_block,
+        "synced_ts": synced_ts,               # 爬蟲上輪 wall-clock（判斷爬蟲是否還活著）
+        "sync_behind_blocks": sync_behind_blocks,  # 真實同步落後區塊數（≈0 = 即時）
         "min_fmv": min_fmv,
     })
 
