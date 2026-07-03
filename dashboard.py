@@ -163,10 +163,64 @@ def api_pack_ev():
     return jsonify(pack_ev.load_and_analyze(path))
 
 
+def _new_pack_from_pack_content():
+    """從 pack_content 取「當前倒數中卡機」的級距組成（每 6h 自動更新）。
+    回傳與舊 new_pack json 相容的形狀，讓 /renaiss 的『本周限量卡機』直接吃。"""
+    conn = _core_db()
+    if not conn:
+        return None
+    row = conn.execute("""SELECT pack_id, pack_name FROM pack_content
+                          WHERE pack_stage='countdown'
+                          ORDER BY captured_at DESC LIMIT 1""").fetchone()
+    if not row:
+        conn.close()
+        return None
+    pid = row["pack_id"]
+    total = conn.execute("SELECT COUNT(*) FROM pack_content WHERE pack_id=?", (pid,)).fetchone()[0]
+    order = "CASE tier WHEN 'TOP' THEN 0 WHEN 'S' THEN 1 WHEN 'A' THEN 2 WHEN 'B' THEN 3 WHEN 'C' THEN 4 WHEN 'D' THEN 5 ELSE 6 END"
+    tiers = {}
+    for t in conn.execute(f"""
+            SELECT tier, COUNT(*) slots, ROUND(AVG(renaiss_buyback_usd),0) avg,
+                   MIN(renaiss_buyback_usd) min, MAX(renaiss_buyback_usd) max
+            FROM pack_content WHERE pack_id=? GROUP BY tier ORDER BY {order}""", (pid,)):
+        tiers[t["tier"]] = {"pct": round(t["slots"]/total*100, 1) if total else 0,
+                            "n_cards": t["slots"], "avg": t["avg"],
+                            "min": t["min"], "max": t["max"]}
+    # 自算EV：整池 buyback 的加權平均（每抽一次的期望官方買回值）
+    our_ev = conn.execute(
+        "SELECT ROUND(AVG(renaiss_buyback_usd),2) FROM pack_content WHERE pack_id=?",
+        (pid,)).fetchone()[0]
+    feat = conn.execute(
+        "SELECT MAX(renaiss_buyback_usd) FROM pack_content WHERE pack_id=?", (pid,)).fetchone()[0]
+    conn.close()
+    # 售價 / 官方EV / 開抽時間：試著從 Renaiss v0 補；拿不到就留空（前端會隱藏該欄）
+    price = official_ev = active_from = None
+    try:
+        import renaiss_api as _api
+        for p in _api.get_packs(include_inactive=True):
+            if p.get("name") == row["pack_name"]:
+                price = p.get("price_usd") or None
+                official_ev = p.get("official_ev_usd") or None
+                active_from = p.get("activeFrom") or p.get("active_from")
+                break
+    except Exception:
+        pass
+    return {
+        "name": row["pack_name"], "packType": "limited", "stage": "countdown",
+        "pack_id": pid, "source": "pack_content", "total_cards": total,
+        "price_usd": price, "official_ev_usd": official_ev, "our_ev_usd": our_ev,
+        "featured_card_fmv_usd": feat, "active_from": active_from,
+        "instant_buyback_pct": 90, "tiers": tiers,
+    }
+
+
 @app.route("/api/new-pack")
 def api_new_pack():
-    """最新限量卡機（如 Bowtie）的完整 scrape：分級組成、官方/自算EV、開抽時間、
-    以及卡池上鏈後的鏈上錢包分析（由 watch_new_pool.py 產生）。"""
+    """本周限量卡機的級距組成。優先用 pack_content 的『當前倒數中卡機』
+    （每 6h 自動更新），無倒數卡機時退回最近一次完整 scrape 的靜態檔。"""
+    fresh = _new_pack_from_pack_content()
+    if fresh:
+        return jsonify(fresh)
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "new_pack_bowtie.json")
     if not os.path.exists(path):
         return jsonify({"note": "尚無新限量卡機資料"})
@@ -593,7 +647,11 @@ def api_core_pack_cards(pack_id):
     if not conn:
         return jsonify({"available": False})
     min_luck = request.args.get("min_luck")
-    having = "HAVING MAX(luck_value) >= ?" if min_luck else ""
+    # luck 必須與所顯示的 buyback 同源：同一 item_id 可跨多 tier/slot，
+    # 各 slot 官方買回價不同。取 MAX(buyback)（最保守，luck 最低）並用同一值
+    # 現算 luck，避免「MAX(buyback) 配 MAX(luck)」湊出不自洽的假高值。
+    luck_expr = "ROUND(MAX(market_price_usd) / NULLIF(MAX(renaiss_buyback_usd), 0), 4)"
+    having = f"HAVING {luck_expr} >= ?" if min_luck else ""
     args = [pack_id]
     if min_luck:
         args.append(float(min_luck))
@@ -602,7 +660,9 @@ def api_core_pack_cards(pack_id):
                COUNT(*) AS slots,
                MAX(renaiss_buyback_usd) AS renaiss_buyback_usd,
                MAX(market_price_usd) AS market_price_usd,
-               MAX(luck_value) AS luck_value,
+               MAX(market_source) AS market_source,
+               MAX(market_url) AS market_url,
+               {luck_expr} AS luck_value,
                MAX(token_id) AS token_id
         FROM pack_content WHERE pack_id=?
         GROUP BY item_id
@@ -623,6 +683,52 @@ def api_core_pack_cards(pack_id):
     })
 
 
+@app.route("/api/core/pack-tiers/<pack_id>")
+def api_core_pack_tiers(pack_id):
+    """單台卡機的級距組成（TOP/S/A/B/C/D）：每級 slot 數、佔比、buyback 區間、代表卡。
+    給「這台卡機每個級距裝了什麼」用。pack_id 可傳 'countdown' 取當前倒數中卡機。"""
+    conn = _core_db()
+    if not conn:
+        return jsonify({"available": False})
+    if pack_id in ("countdown", "current"):
+        r = conn.execute("""SELECT pack_id FROM pack_content WHERE pack_stage='countdown'
+                            ORDER BY captured_at DESC LIMIT 1""").fetchone()
+        if not r:
+            conn.close()
+            return jsonify({"available": False, "note": "目前沒有倒數中的卡機"})
+        pack_id = r["pack_id"]
+    meta = conn.execute(
+        "SELECT pack_name, pack_stage, COUNT(*) AS slots FROM pack_content WHERE pack_id=?",
+        (pack_id,)).fetchone()
+    if not meta or not meta["slots"]:
+        conn.close()
+        return jsonify({"available": False})
+    total = meta["slots"]
+    order = "CASE tier WHEN 'TOP' THEN 0 WHEN 'S' THEN 1 WHEN 'A' THEN 2 WHEN 'B' THEN 3 WHEN 'C' THEN 4 WHEN 'D' THEN 5 ELSE 6 END"
+    tiers = conn.execute(f"""
+        SELECT tier, COUNT(*) AS slots, COUNT(DISTINCT item_id) AS distinct_cards,
+               ROUND(AVG(renaiss_buyback_usd),0) AS avg_buyback,
+               MIN(renaiss_buyback_usd) AS min_buyback,
+               MAX(renaiss_buyback_usd) AS max_buyback
+        FROM pack_content WHERE pack_id=?
+        GROUP BY tier ORDER BY {order}
+    """, (pack_id,)).fetchall()
+    out = []
+    for t in tiers:
+        d = dict(t)
+        d["pct"] = round(d["slots"] / total * 100, 2) if total else None
+        tops = conn.execute("""
+            SELECT DISTINCT name, cert, renaiss_buyback_usd, image_url
+            FROM pack_content WHERE pack_id=? AND tier=?
+            ORDER BY renaiss_buyback_usd DESC LIMIT 5""", (pack_id, t["tier"])).fetchall()
+        d["top_cards"] = [dict(x) for x in tops]
+        out.append(d)
+    conn.close()
+    return jsonify({"available": True, "pack_id": pack_id,
+                    "pack_name": meta["pack_name"], "pack_stage": meta["pack_stage"],
+                    "total_slots": total, "tiers": out})
+
+
 @app.route("/api/core/pack-gems")
 def api_core_pack_gems():
     """跨卡機藏寶卡榜：pack_content 內 luck_value 最高者（含尚未開的卡機）。
@@ -635,7 +741,8 @@ def api_core_pack_gems():
     rows = conn.execute("""
         SELECT pack_id, pack_name, pack_stage, item_id, name, tier, cert,
                grader, grade, year, image_url,
-               renaiss_buyback_usd, market_price_usd, luck_value, token_id
+               renaiss_buyback_usd, market_price_usd, market_source, market_url,
+               luck_value, token_id
         FROM pack_content
         WHERE luck_value >= ?
         GROUP BY pack_id, item_id

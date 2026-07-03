@@ -181,6 +181,80 @@ def build_query(card: Dict, drop_char: bool = False) -> str:
     return q
 
 
+# pack_content 只有一整串 name（如 "PSA 10 Gem Mint 2014 Pokemon Japanese
+# Xy Promo #XY-P Pitch's Pikachu-Holo"），沒有拆好的 set/char/number 欄位，
+# 直接丟進 build_query 會被清成只剩 "pokemon"。這裡先把它拆回結構化欄位。
+_GRADE_PREFIX_RE = re.compile(
+    r"^\s*(?:PSA|BGS|CGC|SGC|ACE)\s*[\d.]+"
+    r"(?:\s+(?:Gem\s*Mint|Gem\s*MT|Mint|Pristine|NM-?MT|Near\s*Mint|"
+    r"Gold\s*Label|Black\s*Label|Perfect))*\s+",
+    re.I,
+)
+_CARD_SUFFIX_RE = re.compile(
+    r"[-\s]+(reverse\s*holo|holo(?:foil)?|full\s*art|alt(?:ernate)?\s*art|"
+    r"secret\s*rare|special\s*illustration(?:\s*rare)?|character\s*rare|"
+    r"trainer\s*gallery)\b.*$",
+    re.I,
+)
+
+
+def parse_card_name(name: str) -> Dict[str, str]:
+    """把 pack_content 的整串 name 拆成 build_query 需要的結構化欄位。
+
+    'PSA 10 Gem Mint 2014 Pokemon Japanese Xy Promo #XY-P Pitch's Pikachu-Holo'
+      -> set_name='Japanese Xy Promo', character_name="Pitch's Pikachu",
+         card_number='XY-P', year='2014'
+    拆不出來時對應欄位留空字串（build_query 仍可退化處理）。
+    """
+    s = (name or "").strip()
+    s = _GRADE_PREFIX_RE.sub("", s)                       # 去鑑定分數前綴
+    year = ""
+    ym = re.match(r"(\d{4})\s+", s)
+    if ym:
+        year = ym.group(1)
+        s = s[ym.end():]
+    s = re.sub(r"^pokemon\s+", "", s, flags=re.I)         # 去 'Pokemon'
+    lang = ""
+    lm = re.match(r"(japanese|chinese|english)\s+", s, re.I)
+    if lm:
+        lang = lm.group(1).title()
+        s = s[lm.end():]
+    number = ""
+    set_part = s
+    char_part = ""
+    nm = re.search(r"#(\S+)", s)
+    if nm:
+        number = nm.group(1)
+        set_part = s[:nm.start()].strip()
+        char_part = s[nm.end():].strip()
+    char_part = _CARD_SUFFIX_RE.sub("", char_part).strip(" -")
+    set_name = (lang + " " + set_part).strip()
+    return {
+        "year": year,
+        "set_name": set_name,
+        "character_name": char_part,
+        "card_number": number,
+    }
+
+
+def _title_matches_card(matched_title: str, character_name: str) -> bool:
+    """防呆：確認 PriceCharting 對到的商品標題含卡片主角名，擋掉
+    '同編號不同卡'（如查 Blastoise #61 卻被對到 Regirock #61）的假匹配。
+
+    角色名的主要 token（長度≥3 的字）至少要有一個出現在標題裡；
+    角色名為空（少數純促銷卡）時不強制，交由 set+number 判斷。
+    """
+    if not character_name:
+        return True
+    if not matched_title:
+        return False
+    title_l = matched_title.lower()
+    tokens = [t for t in re.findall(r"[a-z0-9]+", character_name.lower()) if len(t) >= 3]
+    if not tokens:
+        return True
+    return any(t in title_l for t in tokens)
+
+
 class OurPriceChecker:
     """獨立外部比價（PriceCharting 主來源）。"""
 
@@ -257,6 +331,11 @@ class OurPriceChecker:
           sources          1=有抓到價, 0=未知
           query / checked_at
         """
+        # pack_content 卡片只有整串 name，沒有 set/char/number 欄位時先拆解，
+        # 否則 build_query 會把整串壓成只剩 "pokemon"（永遠對不中）。
+        if card.get("name") and not (card.get("set_name") or card.get("character_name")):
+            card = {**card, **parse_card_name(card.get("name", ""))}
+
         token_id = str(card.get("token_id") or card.get("card_id") or "")
         cache_key = token_id or build_query(card)
 
@@ -267,6 +346,7 @@ class OurPriceChecker:
 
         query = build_query(card)
         grade_label = _grade_label(card.get("grader", ""), card.get("grade", ""))
+        character_name = str(card.get("character_name") or "")
         queries = [query]
         alt = build_query(card, drop_char=True)  # 退路：只用 set+number
         if alt != query:
@@ -299,11 +379,19 @@ class OurPriceChecker:
             result["source"] = pc["source"]
             result["source_url"] = pc["source_url"]
             result["matched_title"] = pc["matched_title"]
+            # 防呆：標題必須含卡片主角名，否則視為「同編號不同卡」假匹配，
+            # 寧可回 None（sources=0）也不給錯價（會污染幸運值）。
+            if not _title_matches_card(pc.get("matched_title", ""), character_name):
+                result["title_mismatch"] = pc.get("matched_title")
+                self.cache[cache_key] = result
+                return result
             chosen = None
             if grade_label and grade_label in pc["grades"]:
                 chosen = grade_label
-            elif "PSA 10" in pc["grades"]:
-                chosen = "PSA 10"  # 退而求其次：頂級價
+            elif grade_label in ("PSA 10", None) and "PSA 10" in pc["grades"]:
+                # 只有「本來就要頂級價 / 未知等級」時才退而求其次用 PSA 10；
+                # 低等級卡（Grade 9/8）缺該欄就回 None，不可套 PSA10 價灌水幸運值。
+                chosen = "PSA 10"
             if chosen:
                 result["grade_matched"] = chosen
                 result["our_price"] = pc["grades"][chosen]["price"]

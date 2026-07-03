@@ -75,8 +75,10 @@ def get_packs(include_inactive: bool = False) -> List[dict]:
     packs = data.get("cardPacks", [])
     for p in packs:
         p["price_usd"]       = int(p.get("priceInUsdt", 0) or 0) / 1e18
-        p["official_ev_usd"] = float(p.get("expectedValueInUsd", 0) or 0)
-        p["featured_fmv_usd"]= float(p.get("featuredCardFmvInUsd", 0) or 0)
+        # expectedValueInUsd / featuredCardFmvInUsd 欄名雖寫 "InUsd"，實測為「美分」
+        # （全 15 台 EV/100 = 售價的 1.03–1.08 倍；不除 100 會變 100 倍離譜值）。
+        p["official_ev_usd"] = float(p.get("expectedValueInUsd", 0) or 0) / 100
+        p["featured_fmv_usd"]= float(p.get("featuredCardFmvInUsd", 0) or 0) / 100
         # 從 description 解析供應量（limited pack 描述含 "1,000 real graded cards"）
         desc = p.get("description", "")
         m = _re.search(r'(\d[\d,]+)\s*(packs?|graded cards?)', desc, _re.I)
@@ -95,7 +97,9 @@ def get_packs(include_inactive: bool = False) -> List[dict]:
         }
     ]
     if include_inactive:
-        packs = packs + COMING_SOON
+        have = {(p.get("slug") or p.get("name")) for p in packs}
+        packs = packs + [c for c in COMING_SOON
+                         if c["slug"] not in have and c["name"] not in have]
 
     return packs
 
@@ -106,8 +110,9 @@ def get_pack_detail(slug: str) -> dict:
     pack = data.get("cardPack", {})
     if pack:
         pack["price_usd"]        = int(pack.get("priceInUsdt", 0) or 0) / 1e18
-        pack["official_ev_usd"]  = float(pack.get("expectedValueInUsd", 0) or 0)
-        pack["featured_fmv_usd"] = float(pack.get("featuredCardFmvInUsd", 0) or 0)
+        # 同 get_packs：這兩欄實測為美分，需 / 100 還原成美元。
+        pack["official_ev_usd"]  = float(pack.get("expectedValueInUsd", 0) or 0) / 100
+        pack["featured_fmv_usd"] = float(pack.get("featuredCardFmvInUsd", 0) or 0) / 100
     return pack
 
 

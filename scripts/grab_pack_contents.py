@@ -120,7 +120,9 @@ def grab_pack(core, pack: dict) -> dict:
             item_id = c.get("itemId")        # 實體卡（可跨槽重複）
             cert = _cert_from_url(c.get("frontImageUrl"))
             try:
-                buyback = float(c.get("buybackBaseValueInUSD") or 0) or None
+                # buybackBaseValueInUSD 欄名雖寫 USD，實測為「美分」（且常是字串）。
+                # 除以 100 還原成美元，與市價（get_graded 已是美元）同單位，luck 才正確。
+                buyback = float(c.get("buybackBaseValueInUSD") or 0) / 100 or None
             except (TypeError, ValueError):
                 buyback = None
             payload.append((
@@ -218,16 +220,109 @@ def enrich_market(core, limit: int = 90, pack_id: str | None = None) -> dict:
             _polite_sleep(0.5, 0.5)
             continue
         consecutive_fail = 0
-        luck = round(price / rb, 4) if rb else None
+        # luck_value 必須逐槽算：同一 cert 在不同 tier/卡機的官方買回價不同，
+        # 用單一 cert 級比值覆蓋整批會污染（B 檔 $121 被 C 檔 $80 的比值蓋掉）。
+        # 市價是每張實體卡共通、逐槽相同，故 market_price_usd 用 cert 級寫入無妨。
+        # 誠實標註來源：renaissos Index 是 Renaiss 自家定價，非獨立第三方成交價。
         core.execute("""
             UPDATE pack_content
-            SET market_price_usd=?, luck_value=?, updated_at=?
-            WHERE cert=?""", (price, luck, now, cert))
+            SET market_price_usd=?,
+                luck_value = CASE WHEN renaiss_buyback_usd > 0
+                                  THEN ROUND(? / renaiss_buyback_usd, 4) END,
+                market_source='renaiss_index', market_url=NULL, updated_at=?
+            WHERE cert=?""", (price, price, now, cert))
         ok += 1
         _polite_sleep(0.5, 0.5)   # 對 Index API 也放慢，避免觸發風控
     core.commit()
     return {"enriched": ok, "missed": miss, "quota_hit": bool(quota),
             "candidates": len(rows)}
+
+
+def enrich_independent(core, limit: int = 200, pack_id: str | None = None,
+                       only_missing: bool = True) -> dict:
+    """用『獨立第三方成交價』補市價 —— PriceCharting（彙整 eBay 已成交拍賣，
+    依鑑定等級分欄）。這才是使用者要的『公信力 + 一般買家拍賣價』來源，
+    與 Renaiss 自家 Index（renaiss_index）不同，可回答『幸運值是不是假的』。
+
+    市價來源優先序：pricecharting_ebay（獨立）> renaiss_index（Renaiss 自家）。
+    故預設 only_missing=True 只補「還沒有任何市價」的卡；獨立來源永遠可覆蓋
+    非獨立來源，但這裡保守不主動覆蓋，交由呼叫端決定。
+
+    PriceCharting 是公開站台、無 Index API 的每日 100 筆硬上限，但仍禮貌節流。
+    比對不到（促銷卡 / 冷門日板）就留 None，絕不捏造。
+    """
+    import our_price
+    now = datetime.now(timezone.utc).isoformat()
+    src_filter = "AND market_price_usd IS NULL" if only_missing \
+        else "AND (market_source IS NULL OR market_source!='pricecharting_ebay')"
+    where = f"WHERE cert IS NOT NULL {src_filter}"
+    params: list = []
+    if pack_id:
+        where += " AND pack_id=?"
+        params.append(pack_id)
+    rows = core.execute(f"""
+        SELECT cert,
+               MIN(name)                AS name,
+               MIN(grader)              AS grader,
+               MIN(grade)               AS grade,
+               MIN(renaiss_buyback_usd) AS rb,
+               MIN(CASE tier WHEN 'TOP' THEN 0 WHEN 'S' THEN 1 WHEN 'A' THEN 2
+                             WHEN 'B' THEN 3 WHEN 'C' THEN 4 ELSE 5 END) AS trank,
+               MAX(CASE pack_stage WHEN 'countdown' THEN 1 ELSE 0 END)  AS live
+        FROM pack_content {where}
+        GROUP BY cert
+        ORDER BY live DESC, trank ASC, rb DESC
+        LIMIT ?
+    """, (*params, limit)).fetchall()
+
+    chk = our_price.OurPriceChecker(throttle=1.2)
+    ok = miss = mismatch = 0
+    total = len(rows)
+    for idx, (cert, name, grader, grade, rb, _tr, _live) in enumerate(rows, 1):
+        card = {"name": name, "grader": grader or "PSA", "grade": grade}
+        try:
+            res = chk.get_independent_price(card)
+        except Exception as e:
+            print(f"[independent] {cert} 例外：{e}", flush=True)
+            res = {}
+        price = res.get("our_price")
+        if price is None:
+            miss += 1
+            if res.get("title_mismatch"):
+                mismatch += 1
+        else:
+            # 非 PSA 鑑定商：把 PriceCharting 的 PSA 基準價換算成該商等價市場價
+            # （例 BGS 10 ≈ PSA 10 × 0.75）。換算不出係數就沿用原價。
+            if (grader or "PSA").upper() != "PSA" and res.get("grade_matched") == "PSA 10":
+                price = our_price.grader_convert(
+                    price, "psa", 10.0, to_grader=(grader or "").lower()) or price
+            price = round(float(price), 2)
+            # luck_value 逐槽算（見 enrich_market 同段說明）：同 cert 不同 tier 的
+            # 官方買回價不同，不可用單一比值覆蓋整批；市價逐槽共通故 cert 級寫入。
+            core.execute("""
+                UPDATE pack_content
+                SET market_price_usd=?,
+                    luck_value = CASE WHEN renaiss_buyback_usd > 0
+                                      THEN ROUND(? / renaiss_buyback_usd, 4) END,
+                    market_source='pricecharting_ebay', market_url=?, updated_at=?
+                WHERE cert=?""", (price, price, res.get("source_url"), now, cert))
+            ok += 1
+        # 每 15 張落地一次：進度可見、可續跑、被中斷也不整批丟失。
+        if idx % 15 == 0:
+            core.commit()
+            try:
+                chk.save_cache()
+            except Exception:
+                pass
+            print(f"[independent] {idx}/{total} · 命中 {ok} 查無 {miss}"
+                  f"（假匹配擋 {mismatch}）", flush=True)
+    core.commit()
+    try:
+        chk.save_cache()
+    except Exception:
+        pass
+    return {"enriched": ok, "missed": miss, "title_mismatch": mismatch,
+            "candidates": total}
 
 
 def show_gems(core, limit: int = 30) -> None:
@@ -263,21 +358,38 @@ def main() -> int:
               f"{'，配額用盡' if st['quota_hit'] else ''}）")
         show_gems(core)
         return 0
+    if args and args[0] == "--independent":
+        # 用獨立第三方成交價（PriceCharting/eBay）補市價。
+        # 可選 limit 與 pack_id：--independent 200 <packId>
+        limit = int(args[1]) if len(args) > 1 else 200
+        pid = args[2] if len(args) > 2 else None
+        st = enrich_independent(core, limit, pid)
+        print(f"[independent] 補獨立市價 {st['enriched']}/{st['candidates']} 張唯一卡"
+              f"（查無 {st['missed']}，其中疑似同編號假匹配已擋 {st['title_mismatch']}）")
+        show_gems(core)
+        return 0
     if args and args[0] == "--daily":
         # 排程入口：先刷全卡機目錄（Renaiss tRPC，無每日上限），
-        # 再用當日剩餘 Index 配額補市價（預設 90，保守留在 100/日 之下）。
+        # 再優先用『獨立成交價』(PriceCharting/eBay，公開站台、無每日硬限) 補市價，
+        # 最後用當日剩餘 Index 配額（renaiss_index，保守 90）補獨立來源查不到的缺口。
         limit = int(args[1]) if len(args) > 1 else 90
+        indep_limit = int(args[2]) if len(args) > 2 else 250
         t0 = time.time()
         gs = grab_all(core)
+        ei = enrich_independent(core, indep_limit)
         es = enrich_market(core, limit)
         n, ncert, nmkt = core.execute(
             "SELECT COUNT(*), COUNT(cert), COUNT(market_price_usd) FROM pack_content"
         ).fetchone()
+        nindep = core.execute(
+            "SELECT COUNT(*) FROM pack_content WHERE market_source='pricecharting_ebay'"
+        ).fetchone()[0]
         print(f"[daily] {datetime.now(timezone.utc):%F %T}Z "
               f"目錄 {gs['packs']}台/{gs['cards']}張 · "
-              f"補市價 {es['enriched']}（查無{es['missed']}"
+              f"獨立補 {ei['enriched']}（查無{ei['missed']}） · "
+              f"Index補 {es['enriched']}（查無{es['missed']}"
               f"{'，配額盡' if es['quota_hit'] else ''}） · "
-              f"累計市價 {nmkt}/{ncert} ({time.time()-t0:.1f}s)")
+              f"累計市價 {nmkt}/{ncert}（獨立 {nindep}）({time.time()-t0:.1f}s)")
         return 0
     only = args[0] if args else None
     t0 = time.time()

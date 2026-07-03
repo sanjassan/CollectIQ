@@ -206,7 +206,9 @@ CREATE TABLE IF NOT EXISTS pack_content (
     year                INTEGER,
     image_url           TEXT,
     renaiss_buyback_usd REAL,            -- 官方買回基準價（= Renaiss FMV）
-    market_price_usd    REAL,            -- 真實市場價（後續分批補；可為 NULL）
+    market_price_usd    REAL,            -- 市場參考價（後續分批補；可為 NULL）
+    market_source       TEXT,            -- 市價來源：renaiss_index(非獨立) / pricecharting_ebay(獨立) / …
+    market_url          TEXT,            -- 該市價的可查證來源連結（獨立來源才有）
     luck_value          REAL,            -- market / renaiss（>1.5 = 藏寶卡）
     token_id            TEXT,            -- 開抽上鏈後解析回填（可為 NULL）
     captured_at         TEXT,
