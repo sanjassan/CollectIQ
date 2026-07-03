@@ -1587,6 +1587,322 @@ def api_price_by_url():
     })
 
 
+@app.route("/cdp")
+def cdp_page():
+    """CDP 模擬器頁：互動式選卡 → 即時看到借款額度。"""
+    return render_template("cdp.html")
+
+
+@app.route("/api/cdp/cards")
+def api_cdp_cards():
+    """回傳所有可質押卡片清單（有獨立驗證價的），供 CDP 模擬器選卡。"""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "comparison.json")
+    if not os.path.exists(path):
+        return jsonify({"error": "comparison.json not built yet"})
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    rows = data.get("rows", [])
+    priced = [r for r in rows if r.get("our_price") is not None and r.get("renaiss_fmv")]
+
+    cards = []
+    for r in priced:
+        delta = abs(r["delta_pct"]) if r.get("delta_pct") is not None else 999
+        if delta <= 10:
+            confidence, ltv = "high", 0.70
+        elif delta <= 30:
+            confidence, ltv = "medium", 0.50
+        else:
+            confidence, ltv = "low", 0.30
+        vp = r["our_price"]
+        cards.append({
+            "token_id": r.get("token_id"),
+            "name": r.get("name", ""),
+            "grader": r.get("grader"),
+            "grade": r.get("grade"),
+            "image_url": r.get("image_url"),
+            "renaiss_fmv": r["renaiss_fmv"],
+            "verified_price": vp,
+            "delta_pct": r.get("delta_pct"),
+            "confidence": confidence,
+            "ltv": ltv,
+            "max_borrow": round(vp * ltv, 2),
+            "liquidation_price": round(vp * 0.80, 2),
+            "flag": r.get("flag"),
+            "source_url": r.get("source_url"),
+        })
+    cards.sort(key=lambda x: x["max_borrow"], reverse=True)
+    return jsonify({"cards": cards, "total": len(cards)})
+
+
+@app.route("/rwa-index")
+def rwa_index_page():
+    """RWA 指數頁：按系列 / IP 的價格指數。"""
+    return render_template("rwa_index.html")
+
+
+@app.route("/api/rwa-index")
+def api_rwa_index():
+    """產出 RWA 指數：按 set_name 分組的價格統計。"""
+    import sqlite3
+    base = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base, "data", "collectiq_core.db")
+    if not os.path.exists(db_path):
+        return jsonify({"error": "collectiq_core.db not found"})
+
+    comp_path = os.path.join(base, "data", "comparison.json")
+    verified_map = {}
+    if os.path.exists(comp_path):
+        with open(comp_path, encoding="utf-8") as f:
+            comp = json.load(f)
+        for r in comp.get("rows", []):
+            if r.get("our_price") is not None:
+                verified_map[r.get("token_id")] = r
+
+    db = sqlite3.connect(db_path)
+    db.row_factory = sqlite3.Row
+
+    cards = db.execute("""
+        SELECT d.token_id, d.name, d.set_name, d.grader, d.grade,
+               f.renaiss_fmv, f.index_price_usd
+        FROM dim_card d
+        LEFT JOIN fmv_snapshots f ON d.token_id = f.token_id
+        WHERE d.set_name IS NOT NULL
+    """).fetchall()
+
+    series = {}
+    for c in cards:
+        sn = c["set_name"]
+        if sn not in series:
+            series[sn] = {
+                "set_name": sn,
+                "ip": "Pokemon" if "Pokemon" in sn else ("One Piece" if "One Piece" in sn else "Other"),
+                "cards": 0,
+                "verified": 0,
+                "total_fmv": 0,
+                "total_verified_price": 0,
+                "total_delta": 0,
+                "high_count": 0,
+                "low_count": 0,
+                "match_count": 0,
+            }
+        s = series[sn]
+        s["cards"] += 1
+        fmv = c["renaiss_fmv"] or 0
+        s["total_fmv"] += fmv
+        tid = c["token_id"]
+        if tid in verified_map:
+            v = verified_map[tid]
+            s["verified"] += 1
+            s["total_verified_price"] += v["our_price"]
+            if v.get("delta_pct") is not None:
+                s["total_delta"] += abs(v["delta_pct"])
+            flag = v.get("flag", "")
+            if flag == "renaiss_high":
+                s["high_count"] += 1
+            elif flag == "renaiss_low":
+                s["low_count"] += 1
+            elif flag == "match":
+                s["match_count"] += 1
+
+    indices = []
+    for sn, s in series.items():
+        if s["cards"] < 3:
+            continue
+        avg_fmv = round(s["total_fmv"] / s["cards"], 2) if s["cards"] else 0
+        avg_verified = round(s["total_verified_price"] / s["verified"], 2) if s["verified"] else None
+        avg_delta = round(s["total_delta"] / s["verified"], 1) if s["verified"] else None
+        trust = round(
+            ((s["match_count"] + s["low_count"]) / s["verified"]) * 100, 1
+        ) if s["verified"] else None
+        indices.append({
+            "set_name": sn,
+            "ip": s["ip"],
+            "cards": s["cards"],
+            "verified": s["verified"],
+            "coverage_pct": round(s["verified"] / s["cards"] * 100, 1) if s["cards"] else 0,
+            "avg_fmv": avg_fmv,
+            "avg_verified_price": avg_verified,
+            "avg_delta": avg_delta,
+            "trust_score": trust,
+            "high_count": s["high_count"],
+            "low_count": s["low_count"],
+            "match_count": s["match_count"],
+            "total_fmv": round(s["total_fmv"], 2),
+            "total_verified": round(s["total_verified_price"], 2),
+        })
+    db.close()
+
+    indices.sort(key=lambda x: x["cards"], reverse=True)
+
+    ip_summary = {}
+    for idx in indices:
+        ip = idx["ip"]
+        if ip not in ip_summary:
+            ip_summary[ip] = {"ip": ip, "series": 0, "cards": 0, "total_fmv": 0, "verified": 0}
+        ip_summary[ip]["series"] += 1
+        ip_summary[ip]["cards"] += idx["cards"]
+        ip_summary[ip]["total_fmv"] += idx["total_fmv"]
+        ip_summary[ip]["verified"] += idx["verified"]
+
+    return jsonify({
+        "indices": indices,
+        "ip_summary": list(ip_summary.values()),
+        "total_series": len(indices),
+        "total_cards": sum(i["cards"] for i in indices),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  單卡查價站 + 錢包追蹤（對外 renaiss_lookup.html 專用）
+# ═══════════════════════════════════════════════════════════════════════════════
+@app.route("/api/card-lookup")
+def api_card_lookup():
+    """單張卡「一次查三來源」：貼卡名 → 併排回傳
+      1) independent：PriceCharting（彙整 eBay 成交，有可查證連結）＝有公信力
+      2) renaiss_index：Renaiss 自家指數 FMV（Index API，非獨立第三方）
+      3) renaiss_buyback：Renaiss 平台收購價（來自 pack_content，逐 entry）＋ luck
+    參數：?q=卡名（必填） ?grader=PSA ?grade=10
+    誠信規則同 CLAUDE.md：independent 與 renaiss_index 不可混用，各自標來源。"""
+    from our_price import _grade_label
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"error": "q 參數必填（卡片名稱）"}), 400
+    grader = request.args.get("grader", "").strip()
+    grade = request.args.get("grade", "").strip()
+
+    out = {"query": q, "grader": grader, "grade": grade,
+           "independent": None, "renaiss_index": None, "renaiss_buyback": None}
+
+    # ── 1) 獨立來源：PriceCharting（重用既有 helper）──
+    try:
+        import re as _re
+        query = q if _re.search(r"\bpokemon\b", q, _re.I) else "pokemon " + q
+        results, direct_url = _pricecharting_list(query)
+        if direct_url or (results and len(results) == 1):
+            url = direct_url or results[0]["url"]
+            pc = _pricecharting_search_by_url(url)
+            glabel = _grade_label(grader, grade)
+            price = None
+            matched = None
+            if pc and pc.get("grades"):
+                g = pc["grades"]
+                if glabel and glabel in g:
+                    matched, price = glabel, g[glabel]["price"]
+                elif "PSA 10" in g:
+                    matched, price = "PSA 10", g["PSA 10"]["price"]
+            out["independent"] = {
+                "source": "pricecharting_ebay", "label": "PriceCharting（彙整 eBay 成交）",
+                "price": price, "grade_matched": matched,
+                "all_grades": pc.get("grades", {}) if pc else {},
+                "url": pc.get("source_url") if pc else url,
+                "matched_title": pc.get("matched_title") if pc else None,
+                "independent": True,
+            }
+        elif results:
+            out["independent"] = {"source": "pricecharting_ebay", "candidates": results[:12],
+                                  "independent": True, "note": "多筆候選，請點選正確卡"}
+    except Exception as e:
+        out["independent"] = {"error": f"{type(e).__name__}: {e}"}
+
+    # ── 2) Renaiss 自家指數 FMV（Index API，非獨立）──
+    try:
+        hits = renaiss_api.search_cards(q, limit=6)
+        out["renaiss_index"] = {
+            "source": "renaiss_index", "label": "Renaiss 自家指數（非獨立第三方）",
+            "independent": False,
+            "results": [{"name": h.get("name"), "grade": h.get("gradeLabel"),
+                         "price_usd": h.get("price_usd")} for h in hits],
+        }
+    except Exception as e:
+        out["renaiss_index"] = {"error": f"{type(e).__name__}: {e}"}
+
+    # ── 3) Renaiss 收購價 + luck（pack_content，逐 entry）──
+    try:
+        conn = _core_db()
+        if conn:
+            rows = conn.execute(
+                """SELECT name, grader, grade, tier, pack_name,
+                          renaiss_buyback_usd, market_price_usd, luck_value,
+                          market_source, market_url, token_id
+                   FROM pack_content
+                   WHERE name LIKE ? AND renaiss_buyback_usd IS NOT NULL
+                   ORDER BY renaiss_buyback_usd DESC LIMIT 8""",
+                (f"%{q}%",)).fetchall()
+            conn.close()
+            out["renaiss_buyback"] = {
+                "source": "pack_content",
+                "label": "Renaiss 收購價（回購）＋ luck = 市價 / 收購",
+                "results": [dict(r) for r in rows],
+            }
+    except Exception as e:
+        out["renaiss_buyback"] = {"error": f"{type(e).__name__}: {e}"}
+
+    return jsonify(out)
+
+
+@app.route("/api/wallet/<addr>")
+def api_wallet(addr):
+    """錢包追蹤：給一個地址，回傳它在 Renaiss 生態的動作
+      · pulls   ：從卡機抽出的卡（is_mint=1, to=addr）＋ FMV
+      · received：別的錢包轉進來的卡（is_mint=0, to=addr）
+      · sent    ：轉出去的卡（from=addr）
+      · listings：在市場上架/掛單紀錄（ledger_market，含 list 價）
+    參數：?limit=100"""
+    import sqlite3 as _sq
+    addr = (addr or "").strip().lower()
+    if not addr.startswith("0x") or len(addr) != 42:
+        return jsonify({"error": "地址格式不正確（需 0x + 40 hex）"}), 400
+    limit = min(int(request.args.get("limit", 100)), 500)
+    base = os.path.dirname(os.path.abspath(__file__))
+
+    out = {"address": addr, "pulls": [], "received": [], "sent": [],
+           "listings": [], "summary": {}}
+
+    # onchain_pulls：pulls / received / sent
+    ocdb = os.path.join(base, "data", "onchain_pulls.db")
+    if os.path.exists(ocdb):
+        oc = _sq.connect(ocdb); oc.row_factory = _sq.Row
+        def _q(where, params):
+            return [dict(r) for r in oc.execute(
+                f"""SELECT token_id, card_name, set_name, market_fmv,
+                           from_addr, to_addr, is_mint, block_time, tx_hash
+                    FROM onchain_pulls WHERE {where}
+                    ORDER BY block_time DESC LIMIT ?""", params).fetchall()]
+        out["pulls"]    = _q("LOWER(to_addr)=? AND is_mint=1", (addr, limit))
+        out["received"] = _q("LOWER(to_addr)=? AND is_mint=0", (addr, limit))
+        out["sent"]     = _q("LOWER(from_addr)=?", (addr, limit))
+        # 摘要統計（全量，不受 limit 影響）
+        s = oc.execute(
+            """SELECT
+                 SUM(CASE WHEN LOWER(to_addr)=? AND is_mint=1 THEN 1 ELSE 0 END) AS n_pulls,
+                 SUM(CASE WHEN LOWER(to_addr)=? AND is_mint=1 THEN COALESCE(market_fmv,0) ELSE 0 END) AS pull_fmv,
+                 SUM(CASE WHEN LOWER(to_addr)=? AND is_mint=0 THEN 1 ELSE 0 END) AS n_recv,
+                 SUM(CASE WHEN LOWER(from_addr)=? THEN 1 ELSE 0 END) AS n_sent
+               FROM onchain_pulls""",
+            (addr, addr, addr, addr)).fetchone()
+        out["summary"] = {"pulls": s["n_pulls"] or 0,
+                          "pull_fmv_total": round(s["pull_fmv"] or 0, 2),
+                          "received": s["n_recv"] or 0, "sent": s["n_sent"] or 0}
+        oc.close()
+
+    # ledger_market：這個地址的上架/掛單（賣卡意圖）
+    conn = _core_db()
+    if conn:
+        try:
+            rows = conn.execute(
+                """SELECT token_id, serial, event_kind, price_usd, seller, buyer, ts, source
+                   FROM ledger_market
+                   WHERE LOWER(seller)=? OR LOWER(buyer)=?
+                   ORDER BY ts DESC LIMIT ?""",
+                (addr, addr, limit)).fetchall()
+            out["listings"] = [dict(r) for r in rows]
+        except Exception:
+            pass
+        conn.close()
+
+    return jsonify(out)
+
+
 if __name__ == "__main__":
     # debug=False for deployment; port overridable via env (Docker maps 8502).
     port = int(os.getenv("DASHBOARD_PORT", "5000"))
