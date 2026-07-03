@@ -61,10 +61,10 @@ def _get(base: str, path: str, params: dict = None) -> dict:
 def get_packs(include_inactive: bool = False) -> List[dict]:
     """所有卡機清單（slug / name / priceInUsdt / expectedValueInUsd / featuredCardFmvInUsd）。
 
-    已知卡機總覽（2026-07-01）：
+    已知卡機總覽（2026-07-03）：
       Active perpetual : eden-pack ($150), omega ($48), renacrypt-pack ($88)
       Archived limited : bowtie/ribbon/plasma/starry/magma/costume/legacy-7,8,9/aura/destiny
-      Coming soon      : world-cup-pack (網站顯示，API 尚未上線)
+      Live limited     : world-cup-pack（已上線，?includeInactive=true 原生回傳）
 
     注意：archived 限量包的 /v0/packs/{slug} 端點回傳 404，
           只有 ?includeInactive=true 清單有基本資訊（無開包記錄）。
@@ -85,18 +85,10 @@ def get_packs(include_inactive: bool = False) -> List[dict]:
         p["supply_hint"] = int(m.group(1).replace(",", "")) if m else None
         p["ev_ratio"] = round(p["official_ev_usd"] / p["price_usd"], 1) if p["price_usd"] else None
 
-    # 補上官網顯示但 API 尚未上線的限量包
-    COMING_SOON = [
-        {
-            "slug": "world-cup-pack", "name": "World Cup Pack",
-            "packType": "limited", "stage": "coming_soon",
-            "price_usd": None, "official_ev_usd": None, "featured_fmv_usd": 3800.0,
-            "supply_hint": 1000, "ev_ratio": None,
-            "description": "Football/soccer-themed limited release. 1,000 real graded cards. Top prize ~$3,800.",
-            "author": "Renaiss",
-        }
-    ]
-    if include_inactive:
+    # 官網已顯示、但 API 尚未上線的限量包放這裡當備援（會與原生清單去重）。
+    # world-cup-pack 已於 API 原生上線，故移除；此清單目前為空。
+    COMING_SOON: List[dict] = []
+    if include_inactive and COMING_SOON:
         have = {(p.get("slug") or p.get("name")) for p in packs}
         packs = packs + [c for c in COMING_SOON
                          if c["slug"] not in have and c["name"] not in have]
