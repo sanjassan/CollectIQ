@@ -6,6 +6,7 @@ Web Dashboard for Renaiss EV Monitor v2
 
 import json
 import os
+import time
 from datetime import datetime
 from flask import Flask, jsonify, render_template, request
 
@@ -1901,6 +1902,140 @@ def api_wallet(addr):
         conn.close()
 
     return jsonify(out)
+
+
+# slug → 抽卡池合約（is_mint=1 時 from_addr = 這些池）。與 track_pulls_onchain.py 的
+# GACHA_CONTRACTS 對齊；limited/custody 卡機（World Cup）走金庫託管，鏈上沒有公開池 feed。
+_POOL_BY_SLUG = {
+    "omega":          "0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910",
+    "eden-pack":      "0xfda4a907d23d9f24271bc47483c5b983831e325e",
+    "renacrypt-pack": "0xb2891022648c5fad3721c42c05d8d283d4d53080",
+}
+
+
+def _pool_activity(pool_addr, recent_n=25):
+    """從 onchain_pulls 算單一抽卡池的：總抽數、最近 feed、高價門檻(p99)、
+    高價抽頻率、最長乾旱間隔排行。全部是真實鏈上資料。"""
+    import sqlite3 as _sq
+    base = os.path.dirname(os.path.abspath(__file__))
+    ocdb = os.path.join(base, "data", "onchain_pulls.db")
+    if not os.path.exists(ocdb):
+        return None
+    oc = _sq.connect(ocdb); oc.row_factory = _sq.Row
+    p = pool_addr.lower()
+    total = oc.execute(
+        "SELECT COUNT(*) n, MAX(block_time) t FROM onchain_pulls "
+        "WHERE LOWER(from_addr)=? AND is_mint=1", (p,)).fetchone()
+    if not total["n"]:
+        oc.close(); return None
+    # 高價門檻：該池 fmv 的 99 百分位（動態、真實）
+    fmvs = [r[0] for r in oc.execute(
+        "SELECT market_fmv FROM onchain_pulls WHERE LOWER(from_addr)=? AND is_mint=1 "
+        "AND market_fmv IS NOT NULL ORDER BY market_fmv", (p,)).fetchall()]
+    hi_thr = fmvs[int(len(fmvs) * 0.99)] if fmvs else 0
+    hi_n = sum(1 for v in fmvs if v >= hi_thr) if hi_thr else 0
+    # 全歷史（時間序）供間隔排行；只取必要欄位
+    seq = oc.execute(
+        "SELECT block_time, market_fmv, card_name, token_id, to_addr, tx_hash "
+        "FROM onchain_pulls WHERE LOWER(from_addr)=? AND is_mint=1 "
+        "ORDER BY block_number ASC, log_index ASC", (p,)).fetchall()
+    # 最長間隔排行：兩次高價抽之間隔了幾抽
+    leaderboard, since = [], 0
+    for r in seq:
+        since += 1
+        if r["market_fmv"] is not None and hi_thr and r["market_fmv"] >= hi_thr:
+            leaderboard.append({"gap": since, "card": r["card_name"],
+                                "ts": r["block_time"], "token_id": r["token_id"]})
+            since = 0
+    leaderboard.sort(key=lambda x: x["gap"], reverse=True)
+    recent = [{"ts": r["block_time"], "fmv": r["market_fmv"], "card": r["card_name"],
+               "wallet": r["to_addr"], "token_id": r["token_id"], "tx": r["tx_hash"]}
+              for r in seq[-recent_n:][::-1]]
+    oc.close()
+    return {
+        "total_pulls": total["n"], "last_pull_ts": total["t"],
+        "hi_threshold": hi_thr, "hi_count": hi_n,
+        "avg_interval": round(total["n"] / hi_n, 1) if hi_n else None,
+        "recent": recent, "leaderboard": leaderboard[:5],
+    }
+
+
+@app.route("/api/pack-activity")
+def api_pack_activity():
+    """所有卡機的即時動態：總抽數 / 最近抽卡 feed（含錢包）/ 高價抽頻率 /
+    最長間隔排行。perpetual 池走鏈上真實資料；limited/custody（World Cup）走金庫託管，
+    鏈上沒有公開抽卡 feed，改由 /api/prize-pool 顯示獎池內容。"""
+    try:
+        packs = renaiss_api.get_packs(include_inactive=False)
+    except Exception as e:
+        return jsonify({"error": f"取卡機清單失敗：{e}"}), 502
+    machines = []
+    for pk in packs:
+        slug = pk.get("slug")
+        m = {"slug": slug, "name": pk.get("name"),
+             "packType": pk.get("packType"), "stage": pk.get("stage"),
+             "price_usd": pk.get("price_usd"),
+             "ev_usd": pk.get("official_ev_usd"),
+             "featured_fmv_usd": pk.get("featured_fmv_usd"),
+             "pool_addr": _POOL_BY_SLUG.get(slug),
+             "custody": slug not in _POOL_BY_SLUG, "onchain": None}
+        pool = _POOL_BY_SLUG.get(slug)
+        if pool:
+            act = _pool_activity(pool)
+            if act:
+                # 用 Renaiss recentOpenedPacks 補上官方 tier（依 token_id 對應到最近 feed）
+                try:
+                    detail = renaiss_api.get_pack_detail(slug)
+                    tiers = {str(o.get("collectibleTokenId")): o.get("tier")
+                             for o in (detail.get("recentOpenedPacks") or [])}
+                    for r in act["recent"]:
+                        r["tier"] = tiers.get(str(r["token_id"]))
+                except Exception:
+                    pass
+                m["onchain"] = act
+        machines.append(m)
+    return jsonify({"machines": machines, "generated_ts": int(time.time())})
+
+
+@app.route("/api/prize-pool")
+def api_prize_pool():
+    """獎池內容一覽（給 limited/custody 卡機，如 World Cup）：pack_content 目錄
+    依價值排序，附 tier / luck / 來源徽章。參數：?slug= 或 ?pack_name= ?limit=200"""
+    slug = (request.args.get("slug") or "").strip()
+    pack_name = (request.args.get("pack_name") or "").strip()
+    limit = min(int(request.args.get("limit", 200)), 1000)
+    conn = _core_db()
+    if not conn:
+        return jsonify({"error": "尚未建立 collectiq_core.db"}), 503
+    # slug → pack_name（用 Renaiss 目錄名比對）
+    if slug and not pack_name:
+        try:
+            for pk in renaiss_api.get_packs(include_inactive=True):
+                if pk.get("slug") == slug:
+                    pack_name = pk.get("name"); break
+        except Exception:
+            pass
+    if not pack_name:
+        conn.close()
+        return jsonify({"error": "需提供 slug 或 pack_name"}), 400
+    rows = conn.execute(
+        """SELECT tier, name, cert, grader, grade, year, image_url,
+                  renaiss_buyback_usd, market_price_usd, luck_value,
+                  market_source, market_url
+           FROM pack_content
+           WHERE pack_name = ?
+           ORDER BY CASE tier WHEN 'TOP' THEN 0 WHEN 'S' THEN 1 WHEN 'A' THEN 2
+                              WHEN 'B' THEN 3 WHEN 'C' THEN 4 ELSE 5 END,
+                    market_price_usd DESC NULLS LAST
+           LIMIT ?""", (pack_name, limit)).fetchall()
+    conn.close()
+    # tier 摘要
+    summary = {}
+    for r in rows:
+        summary[r["tier"]] = summary.get(r["tier"], 0) + 1
+    return jsonify({"pack_name": pack_name, "slug": slug,
+                    "n": len(rows), "tier_summary": summary,
+                    "cards": [dict(r) for r in rows]})
 
 
 if __name__ == "__main__":
