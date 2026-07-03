@@ -11,5 +11,18 @@
       "Bash(pkill -f \"python3.*dashboard.py\")",
       "Bash(DASHBOARD_PORT=8502 nohup python3 dashboard.py)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty'); case \"$f\" in *.py) e=$(python3 -m py_compile \"$f\" 2>&1) || printf '{\"systemMessage\":\"py_compile FAIL: %s\"}' \"$(printf %s \"$e\" | tail -1 | tr -d '\"')\";; esac; exit 0"
+          }
+        ]
+      }
+    ]
   }
 }
