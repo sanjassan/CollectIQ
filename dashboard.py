@@ -385,6 +385,39 @@ def healthz():
     }), (200 if ok else 503)
 
 
+@app.route("/limited-history")
+def limited_history_page():
+    """限量卡機歷史時間軸（誰在何時開放 / 新增 / 抽出 S 卡）。"""
+    return render_template("limited_history.html")
+
+
+@app.route("/api/limited-history")
+def api_limited_history():
+    """limited_events.json 的時間軸視圖：新到舊排序，附 ISO 時間與人類可讀類型。
+    這是 06/26 那類「本週限量卡機卡住」問題的稽核面板——把每次偵測到的限量事件
+    攤開，就能一眼看出上週到底開了哪些場、有沒有漏抓。"""
+    LABELS = {"NEW_PACK": "新卡機", "LIMITED_OPEN": "限量開放", "NEW_S_PULL": "抽出 S 卡"}
+    events = []
+    for e in _limited_events():
+        ts = e.get("ts")
+        events.append({
+            "ts": ts,
+            "iso": (datetime.utcfromtimestamp(float(ts)).isoformat() + "Z") if ts else None,
+            "type": e.get("type"),
+            "type_label": LABELS.get(e.get("type"), e.get("type")),
+            "name": e.get("name"),
+            "slug": e.get("slug"),
+            "is_limited": e.get("is_limited"),
+            "remaining": e.get("remaining"),
+            "platform_ev_usd": e.get("platform_ev_usd"),
+            "card": e.get("card"),
+            "token_id": e.get("token_id"),
+        })
+    events.sort(key=lambda x: x.get("ts") or 0, reverse=True)
+    return jsonify({"events": events, "count": len(events),
+                    "now": datetime.utcnow().isoformat() + "Z"})
+
+
 @app.route("/api/pool-addresses")
 def api_pool_addresses():
     """鏈上卡機合約地址（已知 + 疑似新卡機候選）。discover_pools.py 產生。"""
