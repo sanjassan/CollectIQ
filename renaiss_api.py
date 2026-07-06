@@ -161,7 +161,9 @@ def compute_pack_ev(slug: str) -> dict:
     recent   = p.get("recentOpenedPacks", [])
 
     if recent:
-        fmvs = [float(r.get("fmv", 0)) for r in recent if r.get("fmv") is not None]
+        # recentOpenedPacks[].fmv 與 expectedValueInUsd 同樣是「美分」，需 /100 還原美元
+        # （不除會讓 empirical_ev / ev_delta_pct 膨脹 100 倍）。
+        fmvs = [float(r.get("fmv", 0)) / 100 for r in recent if r.get("fmv") is not None]
         empirical = round(sum(fmvs) / len(fmvs), 2) if fmvs else None
     else:
         empirical = None
