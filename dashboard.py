@@ -361,6 +361,30 @@ def api_freshness():
     })
 
 
+@app.route("/healthz")
+def healthz():
+    """輕量存活探針，給外部 watchdog（scripts/healthcheck.py）用。
+    只確認 Flask 活著 + core.db 可開；不打外部 API，維持毫秒級回應。"""
+    ok = True
+    db_ok = False
+    conn = _core_db()
+    if conn:
+        try:
+            conn.execute("SELECT 1").fetchone()
+            db_ok = True
+        except Exception:
+            ok = False
+        finally:
+            conn.close()
+    else:
+        db_ok = False
+    return jsonify({
+        "status": "ok" if ok else "degraded",
+        "db": db_ok,
+        "now": datetime.utcnow().isoformat() + "Z",
+    }), (200 if ok else 503)
+
+
 @app.route("/api/pool-addresses")
 def api_pool_addresses():
     """鏈上卡機合約地址（已知 + 疑似新卡機候選）。discover_pools.py 產生。"""
