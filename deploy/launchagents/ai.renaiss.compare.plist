@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Renaiss 內外比價（我們自抓的外部公開市場價 vs Renaiss FMV）
+     每 6 小時跑一次 build_comparison.py；our_price.py 有 24h 快取，
+     所以單次只重抓過期的卡，不會狂打 PriceCharting。
+     產出 data/comparison.json 供 dashboard /compare 頁使用。 -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.renaiss.compare</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/anaconda3/bin/python3</string>
+    <string>/Users/f/Workspace/renaiss_ev_monitor_v2/scripts/build_comparison.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/f/Workspace/renaiss_ev_monitor_v2</string>
+
+  <key>StartInterval</key>
+  <integer>21600</integer>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/f/.hermes/logs/renaiss-compare.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/f/.hermes/logs/renaiss-compare.stderr.log</string>
+</dict>
+</plist>

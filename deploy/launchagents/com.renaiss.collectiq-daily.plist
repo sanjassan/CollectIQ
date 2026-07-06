@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.renaiss.collectiq-daily</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/anaconda3/bin/python3</string>
+    <string>-u</string>
+    <string>/Users/f/Workspace/renaiss_ev_monitor_v2/scripts/build_universe.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/f/Workspace/renaiss_ev_monitor_v2</string>
+  <key>StandardOutPath</key>
+  <string>/tmp/collectiq-build2.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/collectiq-build2.log</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>8</integer>
+    <key>Minute</key>
+    <integer>10</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

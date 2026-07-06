@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>BNB_RPC</key>
+		<string>__SET_BNB_RPC_COMMA_SEPARATED__</string>
+		<key>PYTHONUNBUFFERED</key>
+		<string>1</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.renaiss.livepool</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/anaconda3/bin/python3</string>
+		<string>/Users/f/Workspace/renaiss_ev_monitor_v2/scripts/pool_live_monitor.py</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/f/.hermes/logs/renaiss-livepool.stderr.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/f/.hermes/logs/renaiss-livepool.stdout.log</string>
+	<key>StartInterval</key>
+	<integer>120</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/f/Workspace/renaiss_ev_monitor_v2</string>
+</dict>
+</plist>

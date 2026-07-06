@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.renaiss.monitor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/anaconda3/bin/python3</string>
+    <string>/Users/f/Workspace/renaiss_ev_monitor_v2/dashboard.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/f/Workspace/renaiss_ev_monitor_v2</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+    <key>DASHBOARD_PORT</key>
+    <string>8502</string>
+    <key>DASHBOARD_DEBUG</key>
+    <string>0</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/f/.hermes/logs/renaiss-monitor.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/f/.hermes/logs/renaiss-monitor.stderr.log</string>
+</dict>
+</plist>

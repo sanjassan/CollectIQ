@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 新限量卡機卡池捕捉：每 15 分掃一次。平時只查 Renaiss API（便宜），
+     進入開抽窗口（activeFrom 前 30 分起）才做鏈上探測 + 卡池錢包分析。
+     抓到新卡池上鏈時發 Telegram。需 anaconda python（含 web3）。 -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.renaiss.newpool</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/anaconda3/bin/python3</string>
+        <string>/Users/f/Workspace/renaiss_ev_monitor_v2/scripts/watch_new_pool.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/f/Workspace/renaiss_ev_monitor_v2</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/anaconda3/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/f/.hermes/logs/renaiss-newpool.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/f/.hermes/logs/renaiss-newpool.err.log</string>
+</dict>
+</plist>
