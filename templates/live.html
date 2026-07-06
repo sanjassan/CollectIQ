@@ -43,6 +43,26 @@
     @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
     .muted { color:#8b949e; font-size:13px; }
     img.th { width:30px; height:40px; object-fit:cover; border-radius:3px; background:#0b0d10; display:block; }
+
+    /* 手機（≤640px）：收窄留白、縮字級、統計卡等分兩欄，讓高密度表格不再被邊距擠壓 */
+    @media (max-width:640px){
+      header { padding:14px 14px; gap:10px; }
+      h1 { font-size:19px; }
+      main { padding:14px 12px; }
+      nav { width:100%; }
+      nav a { font-size:12px; padding:4px 9px; }
+      .bar label[style*="margin-left"] { margin-left:0 !important; }
+      .stat-row { gap:8px; }
+      .stat-card { flex:1 1 calc(50% - 8px); min-width:0; padding:10px 12px; }
+      .stat-card .sv { font-size:20px; }
+      .cols { gap:16px; }
+      .cols > div { min-width:0; flex:1 1 100%; }
+      .cd-time { font-size:24px; }
+      table { font-size:11px; }
+      th,td { padding:5px 6px; }
+      /* iOS 慣性捲動，讓寬表在手機上滑得順 */
+      .tbl-wrap { -webkit-overflow-scrolling:touch; }
+    }
   </style>
 </head>
 <body>
