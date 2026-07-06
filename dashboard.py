@@ -295,6 +295,72 @@ def api_new_pack():
     })
 
 
+@app.route("/api/freshness")
+def api_freshness():
+    """各資料來源的新鮮度徽章來源：資料多舊、爬蟲是否還活著。
+    每個來源回傳 ts(ISO) / age_sec / stale；stale=true 代表超過該來源容忍門檻。
+    這是 06/26 卡住那類問題的通用防呆——頁面過期就該標紅，而非默默顯示舊資料。"""
+    import time as _time
+    now = _time.time()
+    sources = {}
+
+    def _emit(name, epoch, ttl_sec, extra=None):
+        if epoch is None:
+            src = {"ts": None, "age_sec": None, "stale": True, "ttl_sec": ttl_sec}
+        else:
+            age = max(0, now - float(epoch))
+            src = {"ts": datetime.utcfromtimestamp(float(epoch)).isoformat() + "Z",
+                   "age_sec": int(age), "stale": age > ttl_sec, "ttl_sec": ttl_sec}
+        if extra:
+            src.update(extra)
+        sources[name] = src
+
+    # 1) pack_content 目錄抓取時間（core.db meta）—— 本週限量卡機/卡機總覽的鮮度
+    grabbed_epoch = None
+    conn = _core_db()
+    if conn:
+        try:
+            r = conn.execute("SELECT v FROM meta WHERE k='pack_content_grabbed_at'").fetchone()
+            if r and r[0]:
+                grabbed_epoch = datetime.fromisoformat(r[0].replace("Z", "+00:00")).timestamp()
+        except Exception:
+            pass
+        conn.close()
+    _emit("pack_catalog", grabbed_epoch, 8 * 3600)   # 6h 排程 → 8h 容忍
+
+    # 2) 鏈上同步（onchain_pulls.db state.synced_ts / sync_behind_blocks）
+    synced_ts = sync_behind = None
+    ocdb = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "onchain_pulls.db")
+    if os.path.exists(ocdb):
+        import sqlite3 as _sq
+        c = _sq.connect(ocdb)
+        try:
+            def _s(k):
+                r = c.execute("SELECT v FROM state WHERE k=?", (k,)).fetchone()
+                return int(r[0]) if r and r[0] is not None else None
+            synced_ts = _s("synced_ts")
+            head, sb = _s("head_block"), (_s("synced_block") or _s("last_block"))
+            sync_behind = (head - sb) if (head is not None and sb is not None) else None
+        except Exception:
+            pass
+        c.close()
+    _emit("onchain_sync", synced_ts, 900, {"sync_behind_blocks": sync_behind})  # 300s → 15m 容忍
+
+    # 3) 限量卡機事件（最後一次偵測到新/開放限量卡機）
+    last_ev = None
+    for e in _limited_events():
+        ts = e.get("ts")
+        if ts:
+            last_ev = max(last_ev or 0, ts)
+    _emit("limited_events", last_ev, 7 * 24 * 3600)  # 週更 → 一週容忍
+
+    return jsonify({
+        "now": datetime.utcnow().isoformat() + "Z",
+        "sources": sources,
+        "any_stale": any(s.get("stale") for s in sources.values()),
+    })
+
+
 @app.route("/api/pool-addresses")
 def api_pool_addresses():
     """鏈上卡機合約地址（已知 + 疑似新卡機候選）。discover_pools.py 產生。"""
