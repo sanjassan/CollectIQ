@@ -19,10 +19,24 @@ import requests
 # ─── 設定 ────────────────────────────────────────────────────────────────────
 RENAISS_BASE = "https://api.renaiss.xyz/v0"
 INDEX_BASE   = "https://api.renaissos.com/v1"
-CACHE_TTL    = 300   # 秒
+CACHE_TTL    = 300   # 秒（平台 API）
+INDEX_TTL    = 900   # 秒（Index API 較常 429、資料變動慢 → 拉長快取）
 TIMEOUT      = 20    # 秒
+MAX_RETRIES  = 3     # 429/5xx 重試次數
+BACKOFF_BASE = 1.5   # 秒，指數退避基數
 
 HEADERS = {"Accept": "application/json", "User-Agent": "renaiss-ev-monitor/2.0"}
+
+
+def _retry_after(resp) -> Optional[float]:
+    """解析 Retry-After 標頭（秒數格式）；非數字或缺失回 None。"""
+    val = resp.headers.get("Retry-After")
+    if not val:
+        return None
+    try:
+        return min(float(val), 30.0)   # 上限 30s，別讓單次抓卡太久
+    except ValueError:
+        return None
 
 # ─── 快取 ─────────────────────────────────────────────────────────────────────
 _cache: Dict[str, dict] = {}
@@ -38,20 +52,38 @@ def _cached(key: str, fn, ttl: int = CACHE_TTL):
 
 
 def _get(base: str, path: str, params: dict = None) -> dict:
-    """HTTP GET with cache."""
+    """HTTP GET with cache.
+
+    Index API（api.renaissos.com）偶爾回 429/5xx，這裡對這幾種狀態做指數退避重試；
+    全部失敗時回退到最後一次成功的快取值（即使過期），避免整頁破圖。"""
     params = params or {}
     key = f"{base}{path}?{'&'.join(f'{k}={v}' for k,v in sorted(params.items()))}"
 
     def fetch():
-        try:
-            r = requests.get(f"{base}{path}", params=params, headers=HEADERS, timeout=TIMEOUT)
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            print(f"[renaiss_api] GET {base}{path} failed: {e}")
-            return {}
+        for attempt in range(MAX_RETRIES):
+            try:
+                r = requests.get(f"{base}{path}", params=params, headers=HEADERS, timeout=TIMEOUT)
+                if r.status_code in (429, 500, 502, 503, 504):
+                    wait = _retry_after(r) or BACKOFF_BASE * (2 ** attempt)
+                    print(f"[renaiss_api] {r.status_code} on {path}, retry {attempt+1}/{MAX_RETRIES} in {wait:.1f}s")
+                    time.sleep(wait)
+                    continue
+                r.raise_for_status()
+                return r.json()
+            except requests.RequestException as e:
+                if attempt == MAX_RETRIES - 1:
+                    print(f"[renaiss_api] GET {base}{path} failed after {MAX_RETRIES} tries: {e}")
+                    break
+                time.sleep(BACKOFF_BASE * (2 ** attempt))
+        # 全部失敗：若有過期快取，回退舊值總比空白好
+        stale = _cache.get(key)
+        if stale:
+            print(f"[renaiss_api] serving stale cache for {path} (age {round(time.time()-stale['ts'])}s)")
+            return stale["data"]
+        return {}
 
-    return _cached(key, fetch)
+    ttl = INDEX_TTL if base == INDEX_BASE else CACHE_TTL
+    return _cached(key, fetch, ttl=ttl)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
