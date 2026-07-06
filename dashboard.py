@@ -177,18 +177,28 @@ def api_pack_ev():
     return jsonify(pack_ev.load_and_analyze(path))
 
 
-def _new_pack_from_pack_content():
-    """從 pack_content 取「當前倒數中卡機」的級距組成（每 6h 自動更新）。
-    回傳與舊 new_pack json 相容的形狀，讓 /renaiss 的『本周限量卡機』直接吃。"""
-    conn = _core_db()
-    if not conn:
-        return None
-    row = conn.execute("""SELECT pack_id, pack_name FROM pack_content
-                          WHERE pack_stage='countdown'
-                          ORDER BY captured_at DESC LIMIT 1""").fetchone()
+def _limited_events():
+    """track_limited_packs.py 產生的限量卡機偵測事件（含 ts / slug / remaining）。"""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "limited_events.json")
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else data.get("events", [])
+    except Exception:
+        return []
+
+
+def _pack_tiers_by_name(conn, name):
+    """依 pack_name 從 pack_content 取『最新一版』級距組成。
+    以 updated_at（最後刷新）挑最新版本，而非 captured_at（首見時間）。
+    回傳 (pack_id, total_cards, tiers, our_ev, featured)。找不到回傳 (None, 0, {}, None, None)。"""
+    row = conn.execute(
+        "SELECT pack_id FROM pack_content WHERE pack_name=? "
+        "ORDER BY updated_at DESC LIMIT 1", (name,)).fetchone()
     if not row:
-        conn.close()
-        return None
+        return None, 0, {}, None, None
     pid = row["pack_id"]
     total = conn.execute("SELECT COUNT(*) FROM pack_content WHERE pack_id=?", (pid,)).fetchone()[0]
     order = "CASE tier WHEN 'TOP' THEN 0 WHEN 'S' THEN 1 WHEN 'A' THEN 2 WHEN 'B' THEN 3 WHEN 'C' THEN 4 WHEN 'D' THEN 5 ELSE 6 END"
@@ -206,40 +216,83 @@ def _new_pack_from_pack_content():
         (pid,)).fetchone()[0]
     feat = conn.execute(
         "SELECT MAX(renaiss_buyback_usd) FROM pack_content WHERE pack_id=?", (pid,)).fetchone()[0]
-    conn.close()
-    # 售價 / 官方EV / 開抽時間：試著從 Renaiss v0 補；拿不到就留空（前端會隱藏該欄）
-    price = official_ev = active_from = None
-    try:
-        import renaiss_api as _api
-        for p in _api.get_packs(include_inactive=True):
-            if p.get("name") == row["pack_name"]:
-                price = p.get("price_usd") or None
-                official_ev = p.get("official_ev_usd") or None
-                active_from = p.get("activeFrom") or p.get("active_from")
-                break
-    except Exception:
-        pass
-    return {
-        "name": row["pack_name"], "packType": "limited", "stage": "countdown",
-        "pack_id": pid, "source": "pack_content", "total_cards": total,
-        "price_usd": price, "official_ev_usd": official_ev, "our_ev_usd": our_ev,
-        "featured_card_fmv_usd": feat, "active_from": active_from,
-        "instant_buyback_pct": 90, "tiers": tiers,
-    }
+    return pid, total, tiers, our_ev, feat
 
 
 @app.route("/api/new-pack")
 def api_new_pack():
-    """本周限量卡機的級距組成。優先用 pack_content 的『當前倒數中卡機』
-    （每 6h 自動更新），無倒數卡機時退回最近一次完整 scrape 的靜態檔。"""
-    fresh = _new_pack_from_pack_content()
-    if fresh:
-        return jsonify(fresh)
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "new_pack_bowtie.json")
-    if not os.path.exists(path):
-        return jsonify({"note": "尚無新限量卡機資料"})
-    with open(path, encoding="utf-8") as f:
-        return jsonify(json.load(f))
+    """本週限量卡機。取用順序：
+      ① live API 中開放/倒數中的 limited 卡機（is_open=true）；
+      ② limited_events.json 最近偵測到的 limited 卡機（可能已結束，is_open=false）；
+      ③ 空狀態（empty=true）—— 不再退回寫死的 06/26 靜態檔。
+    級距一律以 pack_content 依 updated_at 取最新版本補上。"""
+    from datetime import timezone as _tz
+    try:
+        packs = renaiss_api.get_packs(include_inactive=True)
+    except Exception:
+        packs = []
+    by_name = {p.get("name"): p for p in packs}
+    by_slug = {p.get("slug"): p for p in packs}
+
+    chosen = None
+    is_open = False
+    remaining = None
+    detected_at = None
+
+    # ① 開放/倒數中的限量卡機（理想狀態）
+    live_open = [p for p in packs
+                 if p.get("packType") == "limited"
+                 and p.get("stage") in ("countdown", "active")]
+    if live_open:
+        chosen = live_open[0]
+        is_open = True
+
+    # ② 最近偵測到的限量卡機（即使已 archived，也比凍在 06/26 誠實）
+    if chosen is None:
+        events = sorted((e for e in _limited_events() if e.get("is_limited")),
+                        key=lambda e: e.get("ts", 0), reverse=True)
+        if events:
+            ev = events[0]
+            remaining = ev.get("remaining")
+            if ev.get("ts"):
+                detected_at = datetime.fromtimestamp(ev["ts"], tz=_tz.utc).isoformat()
+            chosen = by_slug.get(ev.get("slug")) or by_name.get(ev.get("name")) or {
+                "name": ev.get("name"), "slug": ev.get("slug"),
+                "packType": "limited", "stage": "archived"}
+            is_open = chosen.get("stage") in ("countdown", "active")
+
+    # ③ 空狀態：目前真的沒有開放中/近期限量卡機
+    if chosen is None:
+        return jsonify({"empty": True, "note": "目前無開放中限量卡機"})
+
+    name = chosen.get("name")
+    pid = total = None
+    tiers = {}
+    our_ev = feat = None
+    conn = _core_db()
+    if conn:
+        pid, total, tiers, our_ev, feat = _pack_tiers_by_name(conn, name)
+        conn.close()
+
+    return jsonify({
+        "name": name,
+        "slug": chosen.get("slug"),
+        "packType": chosen.get("packType", "limited"),
+        "stage": chosen.get("stage"),
+        "is_open": is_open,
+        "remaining": remaining,
+        "detected_at": detected_at,
+        "pack_id": pid,
+        "source": "live+events",
+        "total_cards": total,
+        "price_usd": chosen.get("price_usd"),
+        "official_ev_usd": chosen.get("official_ev_usd"),
+        "our_ev_usd": our_ev,
+        "featured_card_fmv_usd": feat or chosen.get("featured_fmv_usd"),
+        "active_from": None,
+        "instant_buyback_pct": 90,
+        "tiers": tiers or {},
+    })
 
 
 @app.route("/api/pool-addresses")

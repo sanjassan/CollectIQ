@@ -46,6 +46,32 @@ def _load_json(path: Path, default):
     return default
 
 
+def _capture_content(names: set[str]) -> None:
+    """偵測到新/開放限量卡機時，立刻抓一次該卡機全池卡表寫入 pack_content。
+    限量卡機的 countdown / 開放窗口只有數小時，等 6h 排程的 packgrab 常整台錯過，
+    導致 /api/new-pack 永遠抓不到 countdown 而 fallback。這裡即時補抓一版。
+    以 name 對應（tRPC cardPack.getAll 的 slug 欄位為 None，只有 id/name 可靠）。"""
+    if not names:
+        return
+    try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import grab_pack_contents as gpc
+        import ledger
+        core = ledger.init_db()
+        catalog = {p.get("name"): p for p in gpc.list_packs()}
+        for nm in names:
+            p = catalog.get(nm)
+            if not p:
+                print(f"⚠️ 即時補抓找不到卡機：{nm}")
+                continue
+            res = gpc.grab_pack(core, p)
+            core.commit()
+            print(f"📸 即時補抓 {nm}：{res.get('cards', 0)} 張 "
+                  f"[{p.get('stage')}] {res.get('error', '')}")
+    except Exception as e:
+        print(f"⚠️ 即時補抓失敗：{e}")
+
+
 def main() -> int:
     DATA.mkdir(parents=True, exist_ok=True)
     packs = fetch_packs()
@@ -102,6 +128,12 @@ def main() -> int:
     if new_events:
         events.extend(new_events)
         EVENTS.write_text(json.dumps(events[-500:], indent=2, ensure_ascii=False))
+
+    # 新/開放限量卡機 → 立刻補抓一版全池卡表，別等 6h 排程錯過 countdown 窗口
+    capture = {e["name"] for e in new_events
+               if e["type"] == "LIMITED_OPEN"
+               or (e["type"] == "NEW_PACK" and e.get("is_limited"))}
+    _capture_content(capture)
 
     # 通知（OPEN / NEW_PACK 才推播；NEW_S_PULL 只記錄）
     alertable = [e for e in new_events if e["type"] in ("LIMITED_OPEN", "NEW_PACK")]
