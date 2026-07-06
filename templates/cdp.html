@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CollectIQ · CDP 模擬器</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#484f58;--blue:#58a6ff;--green:#3fb950;--red:#f85149;--amber:#d29922;--purple:#a78bfa}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;line-height:1.5}
+a{color:var(--blue);text-decoration:none}
+.header{background:var(--card);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.header h1{font-size:18px;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.nav{display:flex;gap:6px;flex-wrap:wrap}
+.nav a{padding:4px 10px;border-radius:6px;font-size:12px;color:var(--muted);border:1px solid transparent}
+.nav a:hover{border-color:var(--border);color:var(--text)}
+.nav a.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.container{max-width:1200px;margin:0 auto;padding:20px}
+
+.hero{text-align:center;padding:32px 20px;border-bottom:1px solid var(--border);margin-bottom:24px}
+.hero h2{font-size:28px;font-weight:800;color:var(--purple)}
+.hero p{color:var(--muted);margin-top:8px;font-size:14px}
+
+.sim-layout{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:768px){.sim-layout{grid-template-columns:1fr}}
+
+.card-picker{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px}
+.card-picker h3{font-size:14px;font-weight:700;margin-bottom:12px}
+
+.search-box{width:100%;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;margin-bottom:12px}
+.search-box::placeholder{color:var(--dim)}
+
+.card-list{max-height:500px;overflow-y:auto}
+.card-item{display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:6px;transition:background .15s}
+.card-item:hover,.card-item.selected{background:rgba(88,166,255,.1)}
+.card-item.selected{border:1px solid var(--blue)}
+.card-thumb{width:48px;height:64px;object-fit:cover;border-radius:4px;background:var(--bg)}
+.card-info{flex:1;min-width:0}
+.card-info .name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-info .meta{font-size:11px;color:var(--muted)}
+.card-borrow{text-align:right}
+.card-borrow .amt{font-size:16px;font-weight:800;color:var(--purple)}
+.card-borrow .conf{font-size:11px}
+.conf-high{color:var(--green)}
+.conf-medium{color:var(--amber)}
+.conf-low{color:var(--red)}
+
+.result-panel{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px}
+.result-panel h3{font-size:14px;font-weight:700;margin-bottom:16px}
+
+.empty-state{text-align:center;color:var(--muted);padding:60px 20px}
+.empty-state .icon{font-size:48px;margin-bottom:12px}
+
+.selected-card{text-align:center;margin-bottom:20px}
+.selected-card img{width:120px;height:160px;object-fit:cover;border-radius:8px;border:2px solid var(--border)}
+.selected-card .title{font-size:15px;font-weight:700;margin-top:8px}
+.selected-card .grade{font-size:12px;color:var(--muted)}
+
+.cdp-metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+.cdp-metric{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center}
+.cdp-metric .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.cdp-metric .val{font-size:22px;font-weight:800;margin-top:4px}
+
+.cdp-bar{margin-bottom:20px}
+.cdp-bar-label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px}
+.cdp-bar-track{height:10px;background:var(--bg);border-radius:5px;overflow:hidden}
+.cdp-bar-fill{height:100%;border-radius:5px;transition:width .5s}
+
+.cdp-detail{font-size:12px;color:var(--muted);line-height:2}
+.cdp-detail span{color:var(--text);font-weight:600}
+
+.slider-group{margin:16px 0}
+.slider-group label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+.slider-group input[type=range]{width:100%;accent-color:var(--purple)}
+.slider-val{font-size:14px;font-weight:700;color:var(--purple)}
+
+.portfolio-section{margin-top:24px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px}
+.portfolio-section h3{font-size:14px;font-weight:700;margin-bottom:12px}
+.portfolio-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px}
+.portfolio-total{display:flex;justify-content:space-between;padding:10px 0;font-size:15px;font-weight:800;color:var(--purple)}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>CollectIQ</h1>
+  <nav class="nav">
+    <a href="/">總覽</a>
+    <a href="/verify">價格驗證</a>
+    <a href="/intelligence">Price Intel</a>
+    <a href="/cdp" class="active">CDP 模擬</a>
+    <a href="/rwa-index">RWA 指數</a>
+    <a href="/oracle">Oracle</a>
+    <a href="/holdings">鏈上持有</a>
+  </nav>
+</div>
+
+<div class="hero">
+  <div style="font-size:48px">🏦</div>
+  <h2>CDP 質押模擬器</h2>
+  <p>選擇一張卡片 → 即時計算可借款額度、清算價格、LTV</p>
+</div>
+
+<div class="container">
+  <div class="sim-layout">
+    <!-- Left: Card Picker -->
+    <div class="card-picker">
+      <h3>📋 選擇質押品 <span id="cardCount" style="font-weight:400;color:var(--muted)"></span></h3>
+      <input class="search-box" type="text" placeholder="搜尋卡片名稱..." id="searchInput" oninput="filterCards()"/>
+      <div class="card-list" id="cardList">
+        <div class="empty-state"><div class="icon">⏳</div>載入中...</div>
+      </div>
+    </div>
+
+    <!-- Right: Result Panel -->
+    <div class="result-panel">
+      <h3>💰 質押評估</h3>
+      <div id="resultContent">
+        <div class="empty-state">
+          <div class="icon">👈</div>
+          <p>從左側選擇一張卡片<br/>系統將根據 CollectIQ 驗證價格<br/>即時計算質押參數</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Portfolio CDP -->
+  <div class="portfolio-section">
+    <h3>📊 投資組合質押（多卡同時質押）</h3>
+    <div id="portfolioList"><p style="color:var(--muted);font-size:13px">點擊左側卡片加入組合（再次點擊移除）</p></div>
+    <div class="portfolio-total" id="portfolioTotal" style="display:none">
+      <span>組合總借款額度</span>
+      <span id="portfolioTotalVal">$0</span>
+    </div>
+  </div>
+</div>
+
+<script>
+let allCards=[], selectedId=null, portfolio=new Set();
+
+async function load(){
+  try{
+    const r=await fetch('/api/cdp/cards');
+    const d=await r.json();
+    allCards=d.cards||[];
+    document.getElementById('cardCount').textContent=`(${allCards.length} 張可質押)`;
+    renderCards(allCards);
+  }catch(e){
+    document.getElementById('cardList').innerHTML=`<div class="empty-state"><div class="icon">❌</div>${e.message}</div>`;
+  }
+}
+
+function filterCards(){
+  const q=document.getElementById('searchInput').value.toLowerCase();
+  const filtered=q?allCards.filter(c=>c.name.toLowerCase().includes(q)):allCards;
+  renderCards(filtered);
+}
+
+function renderCards(cards){
+  const el=document.getElementById('cardList');
+  if(!cards.length){el.innerHTML='<div class="empty-state">無符合結果</div>';return;}
+  el.innerHTML=cards.slice(0,100).map(c=>{
+    const confClass='conf-'+c.confidence;
+    const confLabel=c.confidence==='high'?'🟢 高信心':c.confidence==='medium'?'🟡 中信心':'🔴 低信心';
+    const sel=portfolio.has(c.token_id)?'selected':'';
+    return `<div class="card-item ${sel}" onclick="toggleCard('${c.token_id}')">
+      ${c.image_url?`<img class="card-thumb" src="${c.image_url}" loading="lazy" onerror="this.style.display='none'"/>`:''}
+      <div class="card-info">
+        <div class="name">${c.name}</div>
+        <div class="meta">${c.grader} ${c.grade} · 驗證價 $${c.verified_price.toFixed(2)}</div>
+      </div>
+      <div class="card-borrow">
+        <div class="amt">$${c.max_borrow.toFixed(0)}</div>
+        <div class="conf ${confClass}">${confLabel}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleCard(tid){
+  if(portfolio.has(tid)) portfolio.delete(tid); else portfolio.add(tid);
+  selectedId=tid;
+  const card=allCards.find(c=>c.token_id===tid);
+  if(card) renderResult(card);
+  renderPortfolio();
+  filterCards();
+}
+
+function renderResult(c){
+  const confColor=c.confidence==='high'?'var(--green)':c.confidence==='medium'?'var(--amber)':'var(--red)';
+  const confLabel=c.confidence==='high'?'🟢 High — 價差 ±10% 以內':c.confidence==='medium'?'🟡 Medium — 價差 10%-30%':'🔴 Low — 價差 >30%';
+  const ltvPct=(c.ltv*100).toFixed(0);
+
+  document.getElementById('resultContent').innerHTML=`
+    <div class="selected-card">
+      ${c.image_url?`<img src="${c.image_url}" onerror="this.style.display='none'"/>`:''}
+      <div class="title">${c.name}</div>
+      <div class="grade">${c.grader} ${c.grade}</div>
+    </div>
+
+    <div class="cdp-metrics">
+      <div class="cdp-metric">
+        <div class="label">驗證市場價</div>
+        <div class="val" style="color:var(--blue)">$${c.verified_price.toFixed(2)}</div>
+      </div>
+      <div class="cdp-metric">
+        <div class="label">最大可借</div>
+        <div class="val" style="color:var(--purple)">$${c.max_borrow.toFixed(2)}</div>
+      </div>
+      <div class="cdp-metric">
+        <div class="label">清算價格</div>
+        <div class="val" style="color:var(--red)">$${c.liquidation_price.toFixed(2)}</div>
+      </div>
+      <div class="cdp-metric">
+        <div class="label">信心等級</div>
+        <div class="val" style="color:${confColor};font-size:16px">${confLabel}</div>
+      </div>
+    </div>
+
+    <div class="cdp-bar">
+      <div class="cdp-bar-label"><span>LTV: ${ltvPct}%</span><span>清算門檻: 80%</span></div>
+      <div class="cdp-bar-track">
+        <div class="cdp-bar-fill" style="width:${ltvPct}%;background:${confColor}"></div>
+      </div>
+    </div>
+
+    <div class="cdp-detail">
+      Renaiss FMV: <span>$${c.renaiss_fmv.toFixed(2)}</span><br/>
+      獨立驗證價: <span>$${c.verified_price.toFixed(2)}</span><br/>
+      價差: <span style="color:${c.delta_pct>=0?'var(--green)':'var(--red)'}">${c.delta_pct>0?'+':''}${c.delta_pct}%</span><br/>
+      動態 LTV: <span>${ltvPct}%</span>（信心越高 → LTV 越高 → 借更多）<br/>
+      清算觸發: 當市場價跌破 <span style="color:var(--red)">$${c.liquidation_price.toFixed(2)}</span> 時強制清算<br/>
+      ${c.source_url?`<a href="${c.source_url}" target="_blank" style="font-size:11px">🔗 查看 PriceCharting 來源</a>`:''}
+    </div>
+  `;
+}
+
+function renderPortfolio(){
+  const items=allCards.filter(c=>portfolio.has(c.token_id));
+  const el=document.getElementById('portfolioList');
+  const totalEl=document.getElementById('portfolioTotal');
+  const totalValEl=document.getElementById('portfolioTotalVal');
+  if(!items.length){
+    el.innerHTML='<p style="color:var(--muted);font-size:13px">點擊左側卡片加入組合（再次點擊移除）</p>';
+    totalEl.style.display='none';
+    return;
+  }
+  let total=0;
+  el.innerHTML=items.map(c=>{
+    total+=c.max_borrow;
+    const confLabel=c.confidence==='high'?'🟢':c.confidence==='medium'?'🟡':'🔴';
+    return `<div class="portfolio-row">
+      <span>${confLabel} ${c.name.slice(0,40)}${c.name.length>40?'...':''}</span>
+      <span style="font-weight:700;color:var(--purple)">$${c.max_borrow.toFixed(0)}</span>
+    </div>`;
+  }).join('');
+  totalEl.style.display='flex';
+  totalValEl.textContent='$'+total.toFixed(2);
+}
+
+load();
+</script>
+</body>
+</html>
