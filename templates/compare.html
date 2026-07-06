@@ -43,6 +43,9 @@
     .controls button.active { background:#1f6feb; border-color:#1f6feb; color:#fff; }
     .delta-pos { color:#3fb950; }
     .delta-neg { color:#ff9b9b; }
+    .src-ind  { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px;
+                background:#0d2f1c; color:#3fb950; border:1px solid #1a4731; }
+    .src-none { color:#6e7681; font-size:11px; }
 
     .section { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
                padding: 16px 20px; margin-bottom: 20px; }
@@ -130,7 +133,9 @@
         const nm = r.marketplace_url ? `<a href="${r.marketplace_url}" target="_blank">${r.name||"—"}</a>` : (r.name||"—");
         const dcls = r.delta_pct == null ? "" : (r.delta_pct >= 0 ? "delta-pos" : "delta-neg");
         const dtxt = r.delta_pct == null ? "—" : (r.delta_pct>0?"+":"") + r.delta_pct + "%";
-        const src = r.source_url ? `<a href="${r.source_url}" target="_blank">${r.source||"—"}</a>` : "—";
+        const src = r.source_url
+          ? `<a href="${r.source_url}" target="_blank" title="PriceCharting 彙整 eBay 成交，獨立可查證"><span class="src-ind">PriceCharting · 獨立</span></a>`
+          : `<span class="src-none">無獨立報價</span>`;
         const isEgg = r.flag === 'renaiss_low' && r.delta_pct > 30;
         h += `<tr${isEgg ? ' style="background:#0d2318"' : ''}>`
           + `<td>${img} ${nm}</td>`
