@@ -32,11 +32,21 @@ a{color:var(--blue);text-decoration:none}
 .filters input{padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;flex:1;min-width:200px}
 .filters select{padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px}
 
-.idx-table{width:100%;border-collapse:collapse}
-.idx-table th{text-align:left;padding:10px 12px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--bg);cursor:pointer}
+.table-wrap{border:1px solid var(--border);border-radius:10px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.table-hint{display:none;font-size:11px;color:var(--muted);margin-bottom:6px}
+.idx-table{width:100%;border-collapse:collapse;min-width:720px}
+.idx-table th{text-align:left;padding:10px 12px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--bg);cursor:pointer;white-space:nowrap}
 .idx-table th:hover{color:var(--text)}
-.idx-table td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px}
+.idx-table td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;white-space:nowrap}
 .idx-table tr:hover{background:rgba(88,166,255,.05)}
+@media(max-width:640px){
+  .container{padding:14px}
+  .hero{padding:24px 14px}.hero h2{font-size:22px}
+  .table-hint{display:block}
+  .idx-table th,.idx-table td{padding:8px 10px;font-size:12px}
+  .bar-label{width:110px!important}
+  .bar-val{width:60px!important;font-size:11px!important}
+}
 
 .trust-pill{display:inline-block;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600}
 
@@ -100,7 +110,8 @@ a{color:var(--blue);text-decoration:none}
   </div>
 
   <!-- Index Table -->
-  <div style="overflow-x:auto">
+  <div class="table-hint">← 表格可左右滑動查看全部欄位 →</div>
+  <div class="table-wrap">
     <table class="idx-table">
       <thead>
         <tr>
