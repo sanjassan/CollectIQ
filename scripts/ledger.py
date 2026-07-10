@@ -299,9 +299,9 @@ if __name__ == "__main__":
     missing = EXPECTED_TABLES - tables
     extra = tables - EXPECTED_TABLES - {"sqlite_sequence"}
     print(f"[ledger] DB: {CORE_DB}")
-    print(f"[ledger] 建立 {len(tables & EXPECTED_TABLES)}/{len(EXPECTED_TABLES)} 表")
+    print(f"[ledger] created {len(tables & EXPECTED_TABLES)}/{len(EXPECTED_TABLES)} tables")
     if missing:
-        print(f"[ledger] 缺少: {missing}")
+        print(f"[ledger] missing: {missing}")
     if extra:
-        print(f"[ledger] 額外: {extra}")
+        print(f"[ledger] extra: {extra}")
     print("[ledger] OK" if not missing else "[ledger] FAIL")

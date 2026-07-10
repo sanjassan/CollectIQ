@@ -26,17 +26,17 @@ def _connect():
         try:
             w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
             if w3.is_connected():
-                print(f"✅ 連線 BNB RPC 成功 ({rpc}), block: {w3.eth.block_number}")
+                print(f"✅ Connected to BNB RPC successfully ({rpc}), block: {w3.eth.block_number}")
                 return w3
         except Exception as e:  # noqa: BLE001
-            print(f"⚠️  RPC {rpc} 失敗: {type(e).__name__}: {e}")
+            print(f"⚠️  RPC {rpc} failed: {type(e).__name__}: {e}")
     return None
 
 
 def main() -> int:
     w3 = _connect()
     if w3 is None:
-        print("❌ 所有 BNB RPC 都無法連線；跳過鏈上軌道（請改用 marketplace/open-monitor 同步）。")
+        print("❌ Unable to connect to any BNB RPC; skipping the on-chain track (use marketplace/open-monitor sync instead).")
         return 1
     return _scrape(w3)
 
@@ -90,9 +90,9 @@ def _scrape(w3) -> int:
     # Fetch the total card count
     try:
         total = contract.functions.totalCards().call()
-        print(f"✅ 總卡數: {total}")
+        print(f"✅ Total cards: {total}")
     except Exception as e:  # noqa: BLE001
-        print(f"⚠️ totalCards() 失敗: {e}")
+        print(f"⚠️ totalCards() failed: {e}")
         total = 100  # default to fetching 100
 
     # Fetch info for all cards
@@ -108,18 +108,18 @@ def _scrape(w3) -> int:
                 "price": int(price) / 1e18  # convert from BNB units to ETH
             })
         except Exception as e:  # noqa: BLE001
-            print(f"❌ card {i} 抓取失敗: {e}")
+            print(f"❌ card {i} fetch failed: {e}")
 
-    print(f"✅ 抓到 {len(cards)} 張卡")
+    print(f"✅ Fetched {len(cards)} cards")
     if not cards:
-        print("⚠️  鏈上未取得任何卡（ABI 可能不符或合約無此介面）；不覆寫資料。")
+        print("⚠️  No cards retrieved on-chain (ABI may not match or the contract lacks this interface); not overwriting data.")
         return 1
 
     # Save to file
     os.makedirs("data", exist_ok=True)
     with open("data/renaiss_cards_onchain.json", "w", encoding="utf-8") as f:
         json.dump(cards, f, indent=2, ensure_ascii=False)
-    print("✅ 已存 data/renaiss_cards_onchain.json")
+    print("✅ Saved data/renaiss_cards_onchain.json")
     return 0
 
 

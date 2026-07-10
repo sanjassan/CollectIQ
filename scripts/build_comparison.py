@@ -48,7 +48,7 @@ def main() -> int:
 
     src = DATA / ("marketplace_all.json" if use_all else "marketplace_listed.json")
     if not src.exists():
-        print(f"❌ 找不到來源 {src}")
+        print(f"❌ Source not found {src}")
         return 1
     cards = json.loads(src.read_text(encoding="utf-8"))
     if limit:
@@ -57,7 +57,7 @@ def main() -> int:
     chk = OurPriceChecker()
     rows: list[dict] = []
     out = DATA / "comparison.json"
-    print(f"[{time.strftime('%F %T')}] 比價開始：{len(cards)} 張 (來源 {src.name})")
+    print(f"[{time.strftime('%F %T')}] price comparison start: {len(cards)} cards (source {src.name})")
     for i, card in enumerate(cards, 1):
         our = chk.get_independent_price(card, force=force)
         rows.append(compare_card(card, our))
@@ -71,7 +71,7 @@ def main() -> int:
                 "summary": _summarize(rows),
                 "rows": rows,
             }, indent=2, ensure_ascii=False))
-            print(f"  …{i}/{len(cards)} (已比到 {our.get('our_price')} for {card.get('name','')[:40]})")
+            print(f"  …{i}/{len(cards)} (compared {our.get('our_price')} for {card.get('name','')[:40]})")
 
     chk.save_cache()
     summary = _summarize(rows)
@@ -82,7 +82,7 @@ def main() -> int:
         "summary": summary,
         "rows": rows,
     }, indent=2, ensure_ascii=False))
-    print(f"✅ 完成 → {out}")
+    print(f"✅ Done → {out}")
     print(f"   {summary}")
     return 0
 

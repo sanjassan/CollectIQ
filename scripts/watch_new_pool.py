@@ -80,10 +80,10 @@ def fetch_packs() -> list[dict]:
     # tRPC failed all 3 times -> switch to the REST fallback, to avoid an empty round / missing the pull opening
     try:
         packs = _fetch_rest()
-        print(f"  ⚠️ tRPC getAll 失敗（{type(last).__name__}），已改用 REST 備援（{len(packs)} 台）")
+        print(f"  ⚠️ tRPC getAll failed ({type(last).__name__}), switched to REST fallback ({len(packs)} packs)")
         return packs
     except Exception as e2:
-        raise RuntimeError(f"tRPC 與 REST 皆失敗：trpc={last!r} rest={e2!r}")
+        raise RuntimeError(f"tRPC and REST both failed: trpc={last!r} rest={e2!r}")
 
 
 KNOWN_POOLS = {
@@ -376,25 +376,25 @@ def main() -> int:
                "official_ev_usd": p.get("expectedValueInUsd"),
                "price_usd": float(p.get("priceInUsdt", 0)) / 1e18}
         print(f"  {p.get('name')} stage={p.get('stage')} activeFrom={p.get('activeFrom')} "
-              f"window={in_window} pool={cached_pool or '未知'}")
+              f"window={in_window} pool={cached_pool or 'unknown'}")
 
         if in_window:
             pool_addr = cached_pool
             if not pool_addr:
-                print("  🔍 開抽窗口內，鏈上探測新卡池（找被灌 mint 的全新合約）…")
+                print("  🔍 within pull window, probing new pool on-chain (looking for a brand-new contract loaded with mints)…")
                 disc = discover_new_pool()
                 rec["discovery"] = disc
                 top = next((c for c in disc.get("candidates", [])
                             if c.get("is_contract") and c["minted_in"] >= 20), None)
                 if top:
                     pool_addr = top["address"]
-                    print(f"  🎯 命中候選卡池 {pool_addr} (mintIn={top['minted_in']})")
+                    print(f"  🎯 matched candidate pool {pool_addr} (mintIn={top['minted_in']})")
                 else:
-                    print("  …尚未發現足量灌卡的新合約（可能還沒灌池）。候選："
+                    print("  …no new contract with enough loaded cards found yet (may not be loaded yet). Candidates: "
                           + ", ".join(f"{c['address'][:10]}…({c['minted_in']})"
                                       for c in disc.get("candidates", [])[:3]))
             if pool_addr:
-                print(f"  🔗 卡池錢包分析 {pool_addr} …")
+                print(f"  🔗 pool wallet analysis {pool_addr} …")
                 pool = analyze_pool(pool_addr)
                 rec["pool_address"] = pool_addr
                 rec["pool"] = pool
@@ -411,9 +411,9 @@ def main() -> int:
                     base["pool_captured_at"] = now.isoformat()
                     bpath.write_text(json.dumps(base, ensure_ascii=False, indent=2))
                 np_big = len(bigp["big_prizes_pulled"])
-                print(f"  ✓ 灌卡 {pool.get('minted_into_pool')} · 抽卡 {pool.get('pulls_total')} "
-                      f"· 買家 {pool.get('distinct_buyers')} · 已抽出大獎 {np_big} "
-                      f"(剩 {len(bigp['big_prizes_remaining'])})")
+                print(f"  ✓ loaded {pool.get('minted_into_pool')} · pulls {pool.get('pulls_total')} "
+                      f"· buyers {pool.get('distinct_buyers')} · big prizes pulled {np_big} "
+                      f"({len(bigp['big_prizes_remaining'])} remaining)")
                 # Only send Telegram on the first capture
                 if not cached_pool:
                     try:
@@ -427,23 +427,23 @@ def main() -> int:
                         tg = TelegramAlert()
                         if tg.is_configured():
                             bp = bigp["big_prizes_pulled"][:5]
-                            bp_txt = ("\n🎁 已抽出大獎：" + "，".join(
-                                f"{r['name']}{('（'+r['tier']+'）') if r.get('tier') else ''}"
+                            bp_txt = ("\n🎁 Big prizes pulled: " + ", ".join(
+                                f"{r['name']}{(' ('+r['tier']+')') if r.get('tier') else ''}"
                                 f"{(' $'+format(r['fmv'],'.0f')) if r.get('fmv') else ''}"
-                                for r in bp)) if bp else "\n🎁 尚無大獎被抽出"
+                                for r in bp)) if bp else "\n🎁 No big prizes pulled yet"
                             tg.send_alert(
-                                f"🎰 *新限量卡機卡池上鏈*：{p.get('name')}\n"
-                                f"`{pool_addr}`\n灌卡 {pool.get('minted_into_pool')} 張 · "
-                                f"已抽 {pool.get('pulls_total')} · 買家 "
-                                f"{pool.get('distinct_buyers')} 個錢包" + bp_txt)
-                            print("  📨 已發 Telegram")
+                                f"🎰 *New limited pack pool is on-chain*: {p.get('name')}\n"
+                                f"`{pool_addr}`\nloaded {pool.get('minted_into_pool')} cards · "
+                                f"pulled {pool.get('pulls_total')} · buyers "
+                                f"{pool.get('distinct_buyers')} wallets" + bp_txt)
+                            print("  📨 sent Telegram")
                     except Exception as e:
-                        print(f"  ⚠️ 通知失敗：{e}")
+                        print(f"  ⚠️ notification failed: {e}")
         watched.append(rec)
 
     wpath.write_text(json.dumps({"checked_at": now.isoformat(), "packs": watched},
                                 ensure_ascii=False, indent=2))
-    print(f"[{now:%F %T}Z] 監看 {len(watched)} 個（非封存）限量卡機")
+    print(f"[{now:%F %T}Z] watching {len(watched)} (non-archived) limited packs")
     return 0
 
 

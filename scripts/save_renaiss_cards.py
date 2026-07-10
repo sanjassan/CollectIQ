@@ -59,20 +59,20 @@ def save_to_db(conn, cards):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
-        print("用法: python save_renaiss_cards.py <json_file>")
+        print("Usage: python save_renaiss_cards.py <json_file>")
         sys.exit(1)
 
     json_path = sys.argv[1]
     if not Path(json_path).exists():
-        print(f"檔案不存在: {json_path}")
+        print(f"File not found: {json_path}")
         sys.exit(1)
 
     # Load JSON
     cards = load_json(json_path)
-    print(f"載入 {len(cards)} 張卡")
+    print(f"Loaded {len(cards)} cards")
 
     # Save to SQLite
     conn = init_db()
     save_to_db(conn, cards)
     conn.close()
-    print(f"已儲存到 SQLite: {DB_PATH}")
+    print(f"Saved to SQLite: {DB_PATH}")

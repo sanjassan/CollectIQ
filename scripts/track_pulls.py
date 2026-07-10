@@ -73,7 +73,7 @@ def main() -> int:
     try:
         packs = fetch_packs()
     except Exception as e:
-        print(f"❌ 取得卡池失敗：{e}")
+        print(f"❌ failed to fetch packs: {e}")
         return 1
 
     total_new = 0
@@ -85,7 +85,7 @@ def main() -> int:
         try:
             pulls = fetch_pulls(slug)
         except Exception as e:
-            print(f"  ⚠️ {slug} 抓取失敗：{e}")
+            print(f"  ⚠️ {slug} fetch failed: {e}")
             continue
         new_here = 0
         for pull in pulls:
@@ -117,12 +117,12 @@ def main() -> int:
         conn.commit()
         total_new += new_here
         if pulls:
-            per_pack.append(f"{slug}:{len(pulls)}抓/{new_here}新")
+            per_pack.append(f"{slug}:{len(pulls)}fetched/{new_here}new")
 
     grand = conn.execute("SELECT COUNT(*) FROM pull_log").fetchone()[0]
     conn.close()
     ts = datetime.now().strftime("%F %T")
-    print(f"[{ts}] 抽卡追蹤：卡池 {len(packs)} · 本輪新增 {total_new} · 累積 {grand} 筆")
+    print(f"[{ts}] pull tracking: packs {len(packs)} · new this round {total_new} · total {grand}")
     if per_pack:
         print("   " + " | ".join(per_pack))
     return 0

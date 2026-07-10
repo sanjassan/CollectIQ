@@ -173,7 +173,7 @@ def grab_all(core, only: str | None = None) -> dict:
         tcs = " ".join(f"{t}{tc[t]}" for t in TIERS if tc.get(t))
         flag = res.get("error") or res.get("skipped") or ""
         print(f"  [{p.get('stage'):9}] {str(p.get('name'))[:34]:34} "
-              f"{n:>5} 張  {tcs}  {flag}")
+              f"{n:>5} cards  {tcs}  {flag}")
         out.append({"pack_id": p.get("id"), "name": p.get("name"),
                     "stage": p.get("stage"), **res})
         _polite_sleep()
@@ -298,7 +298,7 @@ def enrich_independent(core, limit: int = 200, pack_id: str | None = None,
         try:
             res = chk.get_independent_price(card)
         except Exception as e:
-            print(f"[independent] {cert} 例外：{e}", flush=True)
+            print(f"[independent] {cert} exception: {e}", flush=True)
             res = {}
         price = res.get("our_price")
         if price is None:
@@ -332,8 +332,8 @@ def enrich_independent(core, limit: int = 200, pack_id: str | None = None,
                 chk.save_cache()
             except Exception:
                 pass
-            print(f"[independent] {idx}/{total} · 命中 {ok} 查無 {miss}"
-                  f"（假匹配擋 {mismatch}）", flush=True)
+            print(f"[independent] {idx}/{total} · hits {ok} misses {miss}"
+                  f" (false matches blocked {mismatch})", flush=True)
     core.commit()
     try:
         chk.save_cache()
@@ -353,11 +353,11 @@ def show_gems(core, limit: int = 30) -> None:
         ORDER BY luck_value DESC LIMIT ?
     """, (limit,)).fetchall()
     if not rows:
-        print("尚無市價資料（market_price_usd 全空）——需先用 cert 補真實市價。")
+        print("No market price data yet (market_price_usd all empty) -- fill real market prices via cert first.")
         n = core.execute("SELECT COUNT(*), COUNT(cert) FROM pack_content").fetchone()
-        print(f"目前 pack_content 共 {n[0]} 張，其中 {n[1]} 張有鑑定證號可對市場。")
+        print(f"pack_content currently has {n[0]} cards, of which {n[1]} have a grading cert to match against the market.")
         return
-    print(f"{'幸運':>5}  {'官方買回':>10}  {'市場':>10}  分級 卡名")
+    print(f"{'Luck':>5}  {'Buyback':>10}  {'Market':>10}  Grade Name")
     for (pn, tier, name, cert, rb, mp, lv) in rows:
         print(f"{lv:>5.2f}  ${rb or 0:>9,.0f}  ${mp or 0:>9,.0f}  [{tier}] {str(name)[:50]}")
 
@@ -371,9 +371,9 @@ def main() -> int:
     if args and args[0] == "--enrich":
         limit = int(args[1]) if len(args) > 1 else 90
         st = enrich_market(core, limit)
-        print(f"[enrich] 補市價 {st['enriched']}/{st['candidates']} 張唯一卡"
-              f"（查無 {st['missed']}"
-              f"{'，配額用盡' if st['quota_hit'] else ''}）")
+        print(f"[enrich] filled market prices {st['enriched']}/{st['candidates']} unique cards"
+              f" (missed {st['missed']}"
+              f"{', quota exhausted' if st['quota_hit'] else ''})")
         show_gems(core)
         return 0
     if args and args[0] == "--independent":
@@ -382,8 +382,8 @@ def main() -> int:
         limit = int(args[1]) if len(args) > 1 else 200
         pid = args[2] if len(args) > 2 else None
         st = enrich_independent(core, limit, pid)
-        print(f"[independent] 補獨立市價 {st['enriched']}/{st['candidates']} 張唯一卡"
-              f"（查無 {st['missed']}，其中疑似同編號假匹配已擋 {st['title_mismatch']}）")
+        print(f"[independent] filled independent market prices {st['enriched']}/{st['candidates']} unique cards"
+              f" (missed {st['missed']}, of which suspected same-number false matches blocked {st['title_mismatch']})")
         show_gems(core)
         return 0
     if args and args[0] == "--daily":
@@ -405,22 +405,22 @@ def main() -> int:
             "SELECT COUNT(*) FROM pack_content WHERE market_source='pricecharting_ebay'"
         ).fetchone()[0]
         print(f"[daily] {datetime.now(timezone.utc):%F %T}Z "
-              f"目錄 {gs['packs']}台/{gs['cards']}張 · "
-              f"獨立補 {ei['enriched']}（查無{ei['missed']}） · "
-              f"Index補 {es['enriched']}（查無{es['missed']}"
-              f"{'，配額盡' if es['quota_hit'] else ''}） · "
-              f"累計市價 {nmkt}/{ncert}（獨立 {nindep}）({time.time()-t0:.1f}s)")
+              f"catalog {gs['packs']} machines/{gs['cards']} cards · "
+              f"independent filled {ei['enriched']} (missed {ei['missed']}) · "
+              f"Index filled {es['enriched']} (missed {es['missed']}"
+              f"{', quota exhausted' if es['quota_hit'] else ''}) · "
+              f"cumulative market prices {nmkt}/{ncert} (independent {nindep})({time.time()-t0:.1f}s)")
         return 0
     only = args[0] if args else None
     t0 = time.time()
     st = grab_all(core, only)
-    print(f"[grab] {datetime.now(timezone.utc):%F %T}Z 卡機 {st['packs']} 台 · "
-          f"卡表 {st['cards']} 張入庫 ({time.time()-t0:.1f}s)")
+    print(f"[grab] {datetime.now(timezone.utc):%F %T}Z {st['packs']} pack machines · "
+          f"{st['cards']} cards stored ({time.time()-t0:.1f}s)")
     # Catalog stats
     n, ncert, nmkt = core.execute(
         "SELECT COUNT(*), COUNT(cert), COUNT(market_price_usd) FROM pack_content"
     ).fetchone()
-    print(f"[grab] pack_content 總計 {n} 張 · 有證號 {ncert} · 已補市價 {nmkt}")
+    print(f"[grab] pack_content total {n} cards · with cert {ncert} · market prices filled {nmkt}")
     return 0
 
 

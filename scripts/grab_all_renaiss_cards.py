@@ -58,7 +58,7 @@ def save_to_db(conn, card):
 
 def grab_renaiss_cards():
     """Scrape the RenaCrypt card list from renaiss.xyz."""
-    print(f"開始抓取 RenaCrypt 卡列表...")
+    print(f"Fetching RenaCrypt card list...")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)  # non-headless for easier debugging
@@ -66,45 +66,45 @@ def grab_renaiss_cards():
         page = context.new_page()
 
         # Log in to renaiss.xyz
-        print(f"開啟 renaiss.xyz 登入頁面...")
+        print(f"Opening renaiss.xyz login page...")
         page.goto("https://www.renaiss.xyz")
         page.wait_for_load_state("networkidle")
 
         # Click the Log in button
-        print("點擊 Log in 按鈕...")
+        print("Clicking the Log in button...")
         page.wait_for_selector('button:has-text("Log in")', timeout=10000)
         page.click('button:has-text("Log in")')
         page.wait_for_load_state("networkidle", timeout=10000)
 
         # Wait for the login dialog to appear and enter the email
-        print(f"輸入 Email: {RENAISS_EMAIL}")
+        print(f"Entering Email: {RENAISS_EMAIL}")
         page.wait_for_selector('input[placeholder="abc@renaiss.xyz"]', timeout=10000)
         page.fill('input[placeholder="abc@renaiss.xyz"]', RENAISS_EMAIL)
 
         # Click Send OTP
-        print("點擊 Send OTP...")
+        print("Clicking Send OTP...")
         page.click('button:has-text("Send OTP")')
         page.wait_for_timeout(3000)  # wait for the OTP message
 
         # Enter the OTP manually (prompt the user for input during a real run)
-        print("請在 60 秒內手動輸入 OTP...")
+        print("Please enter the OTP manually within 60 seconds...")
         page.wait_for_timeout(60000)
 
         # Wait for login to complete
-        print("等待登入完成...")
+        print("Waiting for login to complete...")
         page.wait_for_load_state("networkidle", timeout=60000)
 
         # Navigate to the RenaCrypt Pack page
-        print("跳轉到 RenaCrypt Pack 頁面...")
+        print("Navigating to the RenaCrypt Pack page...")
         page.goto("https://www.renaiss.xyz/gacha/renacrypt-pack")
         page.wait_for_load_state("networkidle", timeout=60000)
 
         # Wait for the card list to load
-        print("等待卡列表載入...")
+        print("Waiting for the card list to load...")
         page.wait_for_selector('.card-list, .card-item', timeout=30000)
 
         # Scroll the page to load all cards
-        print("滾動頁面以載入全部卡...")
+        print("Scrolling the page to load all cards...")
         last_height = page.evaluate("document.body.scrollHeight")
         scroll_count = 0
         max_scrolls = 50
@@ -113,17 +113,17 @@ def grab_renaiss_cards():
             page.wait_for_timeout(2000)
             new_height = page.evaluate("document.body.scrollHeight")
             if new_height == last_height:
-                print("已滾動至頁面底部")
+                print("Reached the bottom of the page")
                 break
             last_height = new_height
             scroll_count += 1
-            print(f"滾動次數: {scroll_count}")
+            print(f"Scroll count: {scroll_count}")
 
         # Scrape all cards
         cards = []
         card_elements = page.query_selector_all('.card-item, .card, .pokemon-card')
 
-        print(f"找到 {len(card_elements)} 張卡，開始抓取資料...")
+        print(f"Found {len(card_elements)} cards, starting data extraction...")
 
         for idx, card_elem in enumerate(card_elements, 1):
             try:
@@ -166,24 +166,24 @@ def grab_renaiss_cards():
                 print(f"[{idx}/{len(card_elements)}] {card_name} - {psa_bgs_id}")
 
             except Exception as e:
-                print(f"抓取卡 {idx} 失敗: {e}")
+                print(f"Failed to fetch card {idx}: {e}")
 
         browser.close()
 
     # Save results
-    print(f"\n共抓取 {len(cards)} 張卡，儲存中...")
+    print(f"\nFetched {len(cards)} cards in total, saving...")
 
     # Save JSON
     with open(JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(cards, f, ensure_ascii=False, indent=2)
-    print(f"JSON 已儲存至: {JSON_PATH}")
+    print(f"JSON saved to: {JSON_PATH}")
 
     # Save SQLite
     conn = init_db()
     for card in cards:
         save_to_db(conn, card)
     conn.close()
-    print(f"SQLite 已儲存至: {DB_PATH}")
+    print(f"SQLite saved to: {DB_PATH}")
 
     return cards
 
@@ -191,7 +191,7 @@ def grab_renaiss_cards():
 if __name__ == "__main__":
     try:
         cards = grab_renaiss_cards()
-        print(f"\n完成！共抓取 {len(cards)} 張 RenaCrypt 卡。")
+        print(f"\nDone! Fetched {len(cards)} RenaCrypt cards in total.")
     except Exception as e:
-        print(f"錯誤: {e}")
+        print(f"Error: {e}")
         raise

@@ -158,20 +158,20 @@ def main() -> int:
     ev = compute_eevee_full(core)
     sr = compute_serial_runs(core)
     sb = compute_sbt(core)
-    print(f"[rewards] character_family 標記 {cf['classified']} 張")
-    print(f"[rewards] 伊布全款：{ev['holders']} 位持有者有伊布，其中 {ev['completed']} 位集滿 9 種")
-    print(f"[rewards] 連號：偵測到 {sr['runs']} 組連續序號")
-    print(f"[rewards] SBT：{sb['wallets']} 個錢包有 SBT 獎勵（sbt_awards 尚待接上合約）")
+    print(f"[rewards] character_family tagged {cf['classified']} cards")
+    print(f"[rewards] Eeveelution full set: {ev['holders']} holders have Eevee, of which {ev['completed']} completed all 9 types")
+    print(f"[rewards] serial runs: detected {sr['runs']} groups of consecutive serials")
+    print(f"[rewards] SBT: {sb['wallets']} wallets have SBT rewards (sbt_awards pending contract hookup)")
 
     # Display: the closest to a full Eeveelution set
     top = core.execute(
         "SELECT holder, detail FROM reward_status WHERE reward_type='eevee_full' "
         "ORDER BY json_extract(detail,'$.count') DESC LIMIT 5").fetchall()
     if top:
-        print("[rewards] 最接近全款：")
+        print("[rewards] Closest to a full set:")
         for (h, d) in top:
             dd = json.loads(d)
-            print(f"  {h[:14]}… {dd['count']}/9 缺 {dd['missing']}")
+            print(f"  {h[:14]}… {dd['count']}/9 missing {dd['missing']}")
     return 0
 
 

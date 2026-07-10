@@ -81,7 +81,7 @@ class RpcPool:
         # Only build objects, don't connect (_mk sends no RPC), so a startup every 5 minutes doesn't waste N block_number probes.
         self.clients = [(rpc, _mk(rpc)) for rpc in RPCS]
         if not self.clients:
-            raise RuntimeError("沒有可用的 BSC RPC（請檢查 BNB_RPC）")
+            raise RuntimeError("no usable BSC RPC (please check BNB_RPC)")
         self.i = 0
 
     def _next(self):
@@ -181,7 +181,7 @@ def main() -> int:
                 "fromBlock": cur, "toBlock": end,
             })
         except Exception as e:
-            print(f"  ⚠️ getLogs {cur}-{end} 所有節點皆失敗：{type(e).__name__}; 本輪到此停")
+            print(f"  ⚠️ getLogs {cur}-{end} all nodes failed: {type(e).__name__}; stopping this round here")
             break
         for lg in logs:
             if len(lg["topics"]) != 4:
@@ -212,7 +212,7 @@ def main() -> int:
     grand = conn.execute("SELECT COUNT(*) FROM onchain_pulls").fetchone()[0]
     mints = conn.execute("SELECT COUNT(*) FROM onchain_pulls WHERE is_mint=1").fetchone()[0]
     row_last = conn.execute("SELECT v FROM state WHERE k='last_block'").fetchone()
-    last = row_last[0] if row_last else f"(未推進，起點 {start})"
+    last = row_last[0] if row_last else f"(not advanced, start {start})"
 
     # Sync freshness: lets the frontend tell "actually behind on sync" apart from "just nobody pulled recently."
     # synced_block tracks up to head, synced_ts is this run's wall-clock; only reading both together gives the real lag.
@@ -234,8 +234,8 @@ def main() -> int:
     ).fetchall()
     conn.close()
     ts = datetime.now().strftime("%F %T")
-    print(f"[{ts}] 鏈上追蹤：掃到區塊 {last}/{latest} · 本輪新增 {total_new}(其中抽卡 {mint_new}) · "
-          f"累積 {grand}(抽卡 {mints})")
+    print(f"[{ts}] on-chain tracking: scanned to block {last}/{latest} · new this round {total_new}(pulls {mint_new}) · "
+          f"total {grand}(pulls {mints})")
     for name, tid, fmv, to, bt in hot:
         when = datetime.fromtimestamp(bt, timezone.utc).strftime("%m-%d %H:%M")
         print(f"    💎 {name or ('#'+tid)}  FMV≈${fmv:.2f}  →{to[:10]}…  @{when}UTC")

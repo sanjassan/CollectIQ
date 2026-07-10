@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS tokens (
     image_url       TEXT,
     holder          TEXT,
     holder_short    TEXT,
-    -- Index API 查詢結果
+    -- Index API query results
     index_price_usd REAL,
     index_confidence TEXT,
     index_delta_pct  REAL,
@@ -67,8 +67,8 @@ CREATE TABLE IF NOT EXISTS tokens (
     cert_back        TEXT,
     cert_item        TEXT,
     index_href       TEXT,
-    index_queried    INTEGER DEFAULT 0,  -- 0=未查 1=已查
-    -- 衍生欄位
+    index_queried    INTEGER DEFAULT 0,  -- 0=not queried 1=queried
+    -- Derived fields
     fmv_gap_pct     REAL,   -- (renaiss_fmv - index_price) / index_price × 100
     fmv_gap_usd     REAL,   -- renaiss_fmv - index_price
     updated_at      TEXT

@@ -62,21 +62,21 @@ def _capture_content(names: set[str]) -> None:
         for nm in names:
             p = catalog.get(nm)
             if not p:
-                print(f"⚠️ 即時補抓找不到卡機：{nm}")
+                print(f"⚠️ real-time re-fetch could not find pack: {nm}")
                 continue
             res = gpc.grab_pack(core, p)
             core.commit()
-            print(f"📸 即時補抓 {nm}：{res.get('cards', 0)} 張 "
+            print(f"📸 real-time re-fetch {nm}: {res.get('cards', 0)} cards "
                   f"[{p.get('stage')}] {res.get('error', '')}")
     except Exception as e:
-        print(f"⚠️ 即時補抓失敗：{e}")
+        print(f"⚠️ real-time re-fetch failed: {e}")
 
 
 def main() -> int:
     DATA.mkdir(parents=True, exist_ok=True)
     packs = fetch_packs()
     if not packs:
-        print("❌ /api/packs 無資料")
+        print("❌ /api/packs has no data")
         return 1
 
     prev = _load_json(STATE, {})
@@ -138,31 +138,31 @@ def main() -> int:
     # Notify (only OPEN / NEW_PACK are pushed; NEW_S_PULL is only recorded)
     alertable = [e for e in new_events if e["type"] in ("LIMITED_OPEN", "NEW_PACK")]
     if alertable:
-        lines = ["🎰 *限量卡機動態*"]
+        lines = ["🎰 *Limited pack updates*"]
         for e in alertable:
             if e["type"] == "LIMITED_OPEN":
-                lines.append(f"🟢 *{e['name']}* 開放中！剩 {e['remaining']} 張 · 官方EV ${e.get('platform_ev_usd')}")
+                lines.append(f"🟢 *{e['name']}* now open! {e['remaining']} left · official EV ${e.get('platform_ev_usd')}")
             else:
-                tag = "限量" if e.get("is_limited") else ""
-                lines.append(f"🆕 新卡機 {tag}：*{e['name']}* (剩 {e.get('remaining')})")
+                tag = "Limited" if e.get("is_limited") else ""
+                lines.append(f"🆕 New pack {tag}: *{e['name']}* ({e.get('remaining')} left)")
         msg = "\n".join(lines)
         try:
             from main import TelegramAlert
             tg = TelegramAlert()
             if tg.is_configured():
                 tg.send_alert(msg)
-                print("📨 已發 Telegram 通知")
+                print("📨 sent Telegram notification")
             else:
-                print("ℹ️ Telegram 未設定，僅輸出：")
+                print("ℹ️ Telegram not configured, output only:")
         except Exception as e:
-            print(f"⚠️ 通知發送失敗：{e}")
+            print(f"⚠️ notification send failed: {e}")
         print(msg)
 
     ts = time.strftime("%F %T")
     lim = [s for s, v in cur_state.items() if v["is_limited"]]
     openlim = [s for s, v in cur_state.items() if v["is_limited"] and not v["is_sold_out"]]
-    print(f"[{ts}] 限量追蹤：{len(cur_state)} 卡機 · 限量 {len(lim)} · 開放中限量 {len(openlim)} · "
-          f"本輪事件 {len(new_events)}")
+    print(f"[{ts}] limited tracking: {len(cur_state)} packs · limited {len(lim)} · open limited {len(openlim)} · "
+          f"events this round {len(new_events)}")
     return 0
 
 

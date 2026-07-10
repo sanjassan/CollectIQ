@@ -64,7 +64,7 @@ def _load_pulllog() -> dict[str, dict]:
 
 def build() -> dict:
     if not ONCHAIN_DB.exists():
-        raise SystemExit(f"找不到 {ONCHAIN_DB}")
+        raise SystemExit(f"not found {ONCHAIN_DB}")
     market, name2img = _load_market()
     pulllog = _load_pulllog()
 

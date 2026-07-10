@@ -72,11 +72,11 @@ def _notify(msg: str) -> None:
         tg = TelegramAlert()
         if tg.is_configured():
             tg.send_alert(msg)
-            print("📨 已發 Telegram 通知")
+            print("📨 Telegram notification sent")
         else:
-            print("ℹ️ Telegram 未設定，僅輸出")
+            print("ℹ️ Telegram not configured, output only")
     except Exception as e:
-        print(f"⚠️ 通知發送失敗：{e}")
+        print(f"⚠️ Notification send failed: {e}")
 
 
 def main() -> int:
@@ -87,7 +87,7 @@ def main() -> int:
 
     if healthy:
         if state.get("down"):
-            _notify(f"✅ *Renaiss Dashboard 已恢復*\n{URL}\n{ts}")
+            _notify(f"✅ *Renaiss Dashboard recovered*\n{URL}\n{ts}")
         state = {"down": False, "consecutive_fails": 0, "last_ok": ts}
     else:
         fails = state.get("consecutive_fails", 0) + 1
@@ -95,7 +95,7 @@ def main() -> int:
         state["last_detail"] = detail
         if fails >= FAIL_THRESHOLD and not state.get("down"):
             state["down"] = True
-            _notify(f"🔴 *Renaiss Dashboard 無回應*\n{URL}\n連續失敗 {fails} 次 · {detail}\n{ts}")
+            _notify(f"🔴 *Renaiss Dashboard unresponsive*\n{URL}\n{fails} consecutive failures · {detail}\n{ts}")
 
     STATE.write_text(json.dumps(state, indent=2, ensure_ascii=False))
     status = "OK" if healthy else f"FAIL({state.get('consecutive_fails')})"

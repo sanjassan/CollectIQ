@@ -128,7 +128,7 @@ def main() -> int:
     # Overwrite pool_data for main.py's EV calculation (using marketplace prices)
     (DATA / "pool_data.json").write_text(json.dumps(all_cards, indent=2, ensure_ascii=False))
 
-    print(f"✅ Marketplace 同步：在售 {len(listed)} · 索引 {len(all_cards)}")
+    print(f"✅ Marketplace sync: listed {len(listed)} · indexed {len(all_cards)}")
     print(f"   → {DATA / 'marketplace_all.json'}")
     return 0
 

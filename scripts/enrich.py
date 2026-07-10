@@ -116,7 +116,7 @@ def main() -> int:
         top = core.execute(
             "SELECT token_id, priority, reason FROM enrich_queue "
             "WHERE done=0 ORDER BY priority DESC LIMIT 5").fetchall()
-        print(f"[enrich] 佇列 {st['queued']} 筆待補")
+        print(f"[enrich] queue {st['queued']} pending")
         for (t, p, r) in top:
             print(f"  prio={p:5} [{r}] {str(t)[:16]}…")
     elif cmd == "images":
@@ -124,8 +124,8 @@ def main() -> int:
         if "--limit" in sys.argv:
             limit = int(sys.argv[sys.argv.index("--limit") + 1])
         st = cache_images(core, limit)
-        print(f"[enrich] 圖片快取：成功 {st['cached']} / 失敗 {st['failed']} "
-              f"（嘗試 {st['attempted']}）")
+        print(f"[enrich] image cache: succeeded {st['cached']} / failed {st['failed']} "
+              f"(attempted {st['attempted']})")
     else:
         print(f"unknown cmd: {cmd}")
         return 1

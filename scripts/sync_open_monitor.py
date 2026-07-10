@@ -32,7 +32,7 @@ def main() -> int:
     DATA.mkdir(parents=True, exist_ok=True)
     packs = fetch_packs()
     if not packs:
-        print("❌ open-monitor 無卡池資料")
+        print("❌ open-monitor has no card pool data")
         return 1
 
     all_pulls: list[dict] = []
@@ -126,7 +126,7 @@ def main() -> int:
         "source": BASE,
     }, indent=2))
 
-    print(f"✅ 同步完成：{len(pack_data)} 卡池 · {len(pool_data)} 筆抽卡紀錄")
+    print(f"✅ Sync complete: {len(pack_data)} card pools · {len(pool_data)} draw records")
     print(f"   → {DATA / 'pool_data.json'}")
     return 0
 

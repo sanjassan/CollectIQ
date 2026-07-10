@@ -351,9 +351,9 @@ def main() -> int:
     core.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('transfers_backfilled_at',?)",
                  (datetime.now(timezone.utc).isoformat(),))
     core.commit()
-    print(f"[migrate] 新增 live={st['from_live']} onchain={st['from_onchain']}")
-    print(f"[migrate] ledger_transfers 總計 {total}（含 pool 脈絡 {with_pool}）")
-    print(f"[migrate] kind 分布: {kinds}")
+    print(f"[migrate] added live={st['from_live']} onchain={st['from_onchain']}")
+    print(f"[migrate] ledger_transfers total {total} (with pool context {with_pool})")
+    print(f"[migrate] kind distribution: {kinds}")
 
     print("[migrate] backfill_dims ...")
     ds = backfill_dims(core)
@@ -370,19 +370,19 @@ def main() -> int:
     st_dist = core.execute(
         "SELECT status, COUNT(*) FROM fact_holding GROUP BY status "
         "ORDER BY 2 DESC").fetchall()
-    print(f"[migrate] fact_holding={hs['holdings']} 狀態分布: {st_dist}")
+    print(f"[migrate] fact_holding={hs['holdings']} status distribution: {st_dist}")
 
     print("[migrate] backfill_market ...")
     ms = backfill_market(core)
     mk_dist = core.execute(
         "SELECT event_kind, COUNT(*) FROM ledger_market GROUP BY event_kind").fetchall()
-    print(f"[migrate] ledger_market 事件 {ms['events']} 分布: {mk_dist}")
+    print(f"[migrate] ledger_market events {ms['events']} distribution: {mk_dist}")
 
     print("[migrate] backfill_fmv_snapshots ...")
     fs = backfill_fmv_snapshots(core)
     lucky = core.execute(
         "SELECT COUNT(*) FROM fmv_snapshots WHERE luck_value >= 1.5").fetchone()[0]
-    print(f"[migrate] fmv_snapshots={fs['snaps']}（幸運卡 luck>=1.5: {lucky}）")
+    print(f"[migrate] fmv_snapshots={fs['snaps']} (lucky cards luck>=1.5: {lucky})")
 
     core.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('market_fmv_backfilled_at',?)",
                  (datetime.now(timezone.utc).isoformat(),))

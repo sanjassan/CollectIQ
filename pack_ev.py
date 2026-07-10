@@ -37,7 +37,7 @@ def external_correction_factor(comparison_path: Optional[str] = None) -> dict:
     """
     path = comparison_path or os.path.join(DATA, "comparison.json")
     if not os.path.exists(path):
-        return {"factor": 1.0, "sample_n": 0, "source": "none (comparison.json 不存在)"}
+        return {"factor": 1.0, "sample_n": 0, "source": "none (comparison.json does not exist)"}
     with open(path, encoding="utf-8") as f:
         rows = json.load(f).get("rows", [])
     ratios = [
@@ -46,7 +46,7 @@ def external_correction_factor(comparison_path: Optional[str] = None) -> dict:
         if r.get("our_price") and r.get("renaiss_fmv") and r["renaiss_fmv"] > 0
     ]
     if len(ratios) < 5:
-        return {"factor": 1.0, "sample_n": len(ratios), "source": "樣本不足，未校正"}
+        return {"factor": 1.0, "sample_n": len(ratios), "source": "insufficient samples, uncorrected"}
     return {
         "factor": round(statistics.median(ratios), 4),
         "sample_n": len(ratios),
@@ -108,8 +108,8 @@ def load_and_analyze(pack_data_path: Optional[str] = None) -> dict:
 
 if __name__ == "__main__":
     out = load_and_analyze()
-    print("校正係數:", out["correction"])
-    print(f"{'pack':<18}{'官方EV':>9}{'經驗EV':>9}{'自算EV':>9}{'vs官方':>9}  限量")
+    print("correction factor:", out["correction"])
+    print(f"{'pack':<18}{'OffEV':>9}{'EmpEV':>9}{'CalcEV':>9}{'vsOff':>9}  Ltd")
     for p in out["packs"]:
         print(f"{p['pack_id']:<18}"
               f"{str(p['official_ev_usd']):>9}"

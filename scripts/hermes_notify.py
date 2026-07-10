@@ -42,15 +42,15 @@ def tg(message: str, image_path: str | None = None) -> bool:
         from main import TelegramAlert
         alert = TelegramAlert()
         if not alert.is_configured():
-            print("[tg] 未設定（缺 BOT_TOKEN / CHAT_ID）")
+            print("[tg] not configured (missing BOT_TOKEN / CHAT_ID)")
             return False
         return bool(alert.send_alert(message, image_path=image_path))
     except Exception as e:
-        print(f"[tg] 失敗：{e}")
+        print(f"[tg] failed: {e}")
         return False
 
 
 if __name__ == "__main__":
     import sys
-    msg = sys.argv[1] if len(sys.argv) > 1 else "CollectIQ 測試通知 ✅"
+    msg = sys.argv[1] if len(sys.argv) > 1 else "CollectIQ test notification ✅"
     print("sent:", tg(msg))

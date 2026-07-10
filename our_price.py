@@ -300,14 +300,14 @@ class OurPriceChecker:
         try:
             r = self.session.get(url, timeout=20, allow_redirects=True)
         except requests.RequestException as e:
-            print(f"[WARN] pricecharting 連線失敗 {query!r}: {e}")
+            print(f"[WARN] pricecharting connection failed {query!r}: {e}")
             return None
         if r.status_code != 200:
             print(f"[WARN] pricecharting HTTP {r.status_code} for {query!r}")
             return None
         # Multi-result search page (no redirect to a product page) -> treat as no exact match
         if "/search-products" in r.url and "/game/" not in r.url:
-            print(f"[WARN] pricecharting 無精確匹配: {query!r}")
+            print(f"[WARN] pricecharting no exact match: {query!r}")
             return None
 
         soup = BeautifulSoup(r.text, "html.parser")

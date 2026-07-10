@@ -40,14 +40,14 @@ KNOWN = {
     "0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910": "omega",
     "0xfda4a907d23d9f24271bc47483c5b983831e325e": "eden-pack",
     "0xb2891022648c5fad3721c42c05d8d283d4d53080": "renacrypt-pack",
-    "0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a": "legacy/costume(舊)",
+    "0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a": "legacy/costume(old)",
 }
 ZERO = "0x0000000000000000000000000000000000000000"
 
 
 def discover() -> dict:
     if not DB.exists():
-        return {"error": "onchain_pulls.db 不存在（先跑 track_pulls_onchain.py）"}
+        return {"error": "onchain_pulls.db does not exist (run track_pulls_onchain.py first)"}
     db = sqlite3.connect(DB)
 
     # Distribution profile per from_addr
@@ -98,7 +98,7 @@ def discover() -> dict:
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "known": knowns,
         "candidates": candidates,
-        "note": "candidates 為啟發式疑似新卡機；distinct_recipients 高、received 低、或 minted_in_from_zero>0 最可疑。需更長鏈上歷史才會浮現週五新卡機。",
+        "note": "candidates are heuristically suspected new pools; high distinct_recipients, low received, or minted_in_from_zero>0 are the most suspicious. A longer on-chain history is needed for Friday's new pools to surface.",
     }
 
 
@@ -114,26 +114,26 @@ def main() -> int:
     prev_cand = {c["address"] for c in prev.get("candidates", [])}
     new_cand = [c for c in res["candidates"] if c["address"] not in prev_cand]
 
-    print(f"[{time.strftime('%F %T')}] 卡機探測：已知 {len(res['known'])} · 疑似候選 {len(res['candidates'])} · 新候選 {len(new_cand)}")
+    print(f"[{time.strftime('%F %T')}] pool detection: known {len(res['known'])} · suspected candidates {len(res['candidates'])} · new candidates {len(new_cand)}")
     for c in res["candidates"][:8]:
         print(f"   {'🆕' if c['address'] not in prev_cand else '  '} {c['address']} "
               f"buyers={c['distinct_recipients']} tokens={c['distinct_tokens']} "
               f"recv={c['received']} mintIn={c['minted_in_from_zero']} conf={c['confidence']}")
 
     if new_cand:
-        lines = ["🔎 *鏈上偵測：疑似新卡機合約*"]
+        lines = ["🔎 *On-chain detection: suspected new pool contracts*"]
         for c in new_cand[:5]:
-            lines.append(f"`{c['address']}` 買家 {c['distinct_recipients']} / token {c['distinct_tokens']}"
-                         + (f" · 被灌 mint {c['minted_in_from_zero']}" if c['minted_in_from_zero'] else ""))
+            lines.append(f"`{c['address']}` buyers {c['distinct_recipients']} / token {c['distinct_tokens']}"
+                         + (f" · loaded mint {c['minted_in_from_zero']}" if c['minted_in_from_zero'] else ""))
         msg = "\n".join(lines)
         try:
             from main import TelegramAlert
             tg = TelegramAlert()
             if tg.is_configured():
                 tg.send_alert(msg)
-                print("📨 已發 Telegram 通知")
+                print("📨 Telegram notification sent")
         except Exception as e:
-            print(f"⚠️ 通知失敗：{e}")
+            print(f"⚠️ Notification failed: {e}")
     return 0
 
 

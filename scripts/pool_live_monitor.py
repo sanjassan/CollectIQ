@@ -58,7 +58,7 @@ try:  # unified core ledger (RAW full record, reorg-safe); its absence doesn't a
 except Exception as _e:  # pragma: no cover
     _ledger = None
     _CORE = None
-    print(f"[core] ledger 未啟用：{_e}")
+    print(f"[core] ledger not enabled: {_e}")
 
 
 def _iso(ts) -> str | None:
@@ -140,7 +140,7 @@ def fetch_limited_packs() -> list[dict]:
         r.raise_for_status()
         return r.json()[0]["result"]["data"]["json"]["cardPacks"]
     except Exception as e:
-        print(f"[trpc] 取卡機清單失敗：{e}")
+        print(f"[trpc] failed to fetch pack list: {e}")
         return []
 
 
@@ -191,8 +191,8 @@ def pick_target_pool(rpcs: RpcPool) -> dict:
         slug = (p.get("name") or "").lower().replace(" ", "-")
         if not in_window:
             if af and af > now:
-                print(f"[target] 即將開放：{p.get('name')} activeFrom={p.get('activeFrom')} "
-                      f"(還有 {(af-now).total_seconds()/3600:.1f} 小時)")
+                print(f"[target] opening soon: {p.get('name')} activeFrom={p.get('activeFrom')} "
+                      f"({(af-now).total_seconds()/3600:.1f} hours to go)")
             continue
 
         # 2a) cache hit (this machine's pool address was already discovered) -> use it directly, no rescan (saves RPC)
@@ -202,7 +202,7 @@ def pick_target_pool(rpcs: RpcPool) -> dict:
                     "active_from": p.get("activeFrom"), "notified": cache.get("notified", False)}
 
         # 2b) first time: probe for the new pool on-chain
-        print(f"[target] 開放窗口內：{p.get('name')} → 鏈上探測池…")
+        print(f"[target] within open window: {p.get('name')} → probing pool on-chain…")
         addr = discover_pool(rpcs)
         if addr:
             _write_cache({"slug": slug, "address": addr, "name": p.get("name"),
@@ -210,10 +210,10 @@ def pick_target_pool(rpcs: RpcPool) -> dict:
                           "discovered_at": now.isoformat()})
             return {"address": addr, "slug": slug, "name": p.get("name"),
                     "active_from": p.get("activeFrom"), "notified": False}
-        print("[target] 尚未偵測到已灌卡的新池（可能還沒灌池）。")
+        print("[target] no loaded new pool detected yet (may not be loaded yet).")
 
     # 3) default omega (has historical data to display)
-    print("[target] 無開放中限量卡機，回退預設 omega（供介面/測試）。")
+    print("[target] no open limited pack, falling back to default omega (for UI/testing).")
     return {"address": "0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910",
             "slug": "omega", "name": "Omega (demo)", "active_from": None}
 
@@ -239,19 +239,19 @@ def notify_capture(target: dict, stats: dict, conn):
             img = r[0] if r and r[0] else None
         except Exception:
             pass
-    lines = [f"🎰 *限量卡機池已上鏈*：{target.get('name')}",
+    lines = [f"🎰 *Limited pack pool is on-chain*: {target.get('name')}",
              f"`{pool}`",
-             f"灌卡 {stats['loaded']} · 在池 {stats['in_pool']} · 已抽 {stats['pulled']} · 買家 {stats['buyers']}"]
+             f"loaded {stats['loaded']} · in pool {stats['in_pool']} · pulled {stats['pulled']} · buyers {stats['buyers']}"]
     if big:
-        lines.append("💎 大獎：" + "，".join(
+        lines.append("💎 Big prizes: " + ", ".join(
             f"{(n or '#'+str(t)[-6:])[:32]}{(' $'+format(f,'.0f')) if f else ''}" for n, f, t in big))
-    lines.append("→ /live 面板即時追蹤每張卡被哪個錢包抽走")
+    lines.append("→ /live panel tracks in real time which wallet pulled each card")
     from hermes_notify import tg
     if tg("\n".join(lines), image_path=img):
         c = _read_cache()
         c["notified"] = True
         _write_cache(c)
-        print("[tg] 已發池上鏈通知")
+        print("[tg] sent pool on-chain notification")
 
 
 def discover_pool(rpcs: RpcPool, blocks: int = 6000) -> str | None:
@@ -283,7 +283,7 @@ def discover_pool(rpcs: RpcPool, blocks: int = 6000) -> str | None:
         try:
             code = rpcs._try_all(lambda w3: w3.eth.get_code(w3.to_checksum_address(addr)))
             if len(code) > 4:
-                print(f"[discover] 命中候選池 {addr} (mintIn={n}, is_contract)")
+                print(f"[discover] matched candidate pool {addr} (mintIn={n}, is_contract)")
                 return addr
         except Exception:
             pass
@@ -305,7 +305,7 @@ def _seed_from_onchain_db(conn: sqlite3.Connection, pool: str) -> int:
     src.close()
     for tx, li, tid, frm, to, bn, bt, fmv, name in rows:
         _apply_event(conn, pool, bn, li or 0, bt, tid, frm.lower(), to.lower(), tx, name, fmv)
-    print(f"[seed] 從 onchain_pulls.db 匯入 {len(rows)} 筆與 {pool[:10]}… 相關的事件")
+    print(f"[seed] imported {len(rows)} events related to {pool[:10]}… from onchain_pulls.db")
     return max((r[5] for r in rows), default=0)
 
 
@@ -426,7 +426,7 @@ def scan_forward(conn, rpcs, pool: str, from_block: int, market: dict) -> int:
     if _CORE is not None:
         promoted = _ledger.finalize_confirmations(_CORE, latest)
         if promoted:
-            print(f"[core] 定案升級 {promoted} 筆（confirmed 0→1）")
+            print(f"[core] finalized {promoted} records (confirmed 0→1)")
     return latest, new_ev
 
 
@@ -463,9 +463,9 @@ def run_once(conn, rpcs, market, target) -> dict:
     latest, new_ev = scan_forward(conn, rpcs, pool, from_block, market)
     stats = recompute_meta(conn, target, latest)
     ts = datetime.now().strftime("%F %T")
-    print(f"[{ts}] 池 {pool[:10]}… 掃到 {latest} · 本輪新增 {new_ev} · "
-          f"灌卡 {stats['loaded']} 在池 {stats['in_pool']} 已抽 {stats['pulled']} "
-          f"回收 {stats['recycled']} 銷毀 {stats['burned']} 買家 {stats['buyers']}")
+    print(f"[{ts}] pool {pool[:10]}… scanned to {latest} · new this round {new_ev} · "
+          f"loaded {stats['loaded']} in pool {stats['in_pool']} pulled {stats['pulled']} "
+          f"recycled {stats['recycled']} burned {stats['burned']} buyers {stats['buyers']}")
     return stats
 
 
@@ -485,12 +485,12 @@ def main() -> int:
     market = _load_market()
 
     target = pick_target_pool(rpcs)
-    print(f"[monitor] 目標池 {target['address']} ({target.get('name')})")
+    print(f"[monitor] target pool {target['address']} ({target.get('name')})")
 
     fast = _in_open_window(target) or os.getenv("FAST_LOOP") == "1"
     if fast:
         # Within the opening window: internally keep scanning every 30s for ~110s (paired with launchd 120s -> near-continuous 30s updates)
-        print("[monitor] 開放窗口 → 高頻模式（30s×~4 輪）")
+        print("[monitor] open window → high-frequency mode (30s × ~4 rounds)")
         deadline = time.time() + 110
         while True:
             stats = run_once(conn, rpcs, market, target)

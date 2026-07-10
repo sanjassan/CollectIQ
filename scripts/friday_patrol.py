@@ -109,12 +109,12 @@ def main() -> int:
     mage = _monitor_age()
     if mage is None or mage > FRESH_LIMIT:
         _kickstart("ai.renaiss.livepool")
-        actions.append(f"重啟 livepool（上次更新 {('無' if mage is None else str(int(mage))+'s前')}）")
+        actions.append(f"restart livepool (last update {('none' if mage is None else str(int(mage))+'s ago')})")
     # 2) Is pulls tracking alive?
     pulls_age = _mtime_age(Path.home() / ".hermes" / "logs" / "renaiss-pulls.stdout.log")
     if pulls_age is None or pulls_age > 600:
         _kickstart("ai.renaiss.pulls")
-        actions.append("重啟 pulls 追蹤")
+        actions.append("restart pulls tracking")
 
     status = _pool_status()
     now = datetime.now(timezone.utc)
@@ -127,15 +127,15 @@ def main() -> int:
 
     if should_notify:
         from hermes_notify import tg
-        lines = [f"🛡️ *週五巡檢* {now:%H:%M}UTC"]
+        lines = [f"🛡️ *Friday patrol* {now:%H:%M}UTC"]
         if status["discovered"]:
-            lines.append(f"✅ 已鎖定池 `{status['address']}`")
-            lines.append(f"灌卡 {status['loaded']} · 已抽 {status['pulled']} · 買家 {status['buyers']}")
-            lines.append("→ /live 面板即時追蹤")
+            lines.append(f"✅ Pool locked `{status['address']}`")
+            lines.append(f"loaded {status['loaded']} · pulled {status['pulled']} · buyers {status['buyers']}")
+            lines.append("→ /live panel live tracking")
         else:
-            lines.append("⏳ 尚未偵測到已灌卡的新池（監控中，開池瞬間會通知）")
+            lines.append("⏳ No loaded new pool detected yet (monitoring; will notify the moment a pool opens)")
         if actions:
-            lines.append("🔧 " + "；".join(actions))
+            lines.append("🔧 " + "; ".join(actions))
         tg("\n".join(lines))
 
     STATE.write_text(json.dumps({
@@ -143,7 +143,7 @@ def main() -> int:
         "discovered": status["discovered"], "pulled": status["pulled"],
         "monitor_age": mage, "actions": actions,
     }, ensure_ascii=False, indent=2))
-    print(f"[{now:%F %T}Z] 巡檢：monitor_age={mage} pool={status['discovered']} "
+    print(f"[{now:%F %T}Z] patrol: monitor_age={mage} pool={status['discovered']} "
           f"pulled={status['pulled']} actions={actions}")
     return 0
 
