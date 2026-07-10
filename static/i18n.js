@@ -360,7 +360,25 @@
     "尚無（覆蓋率補齊後浮現）": { en: "None yet (appears once coverage fills in)", ja: "なし（カバレッジ補完後に表示）", ko: "없음 (커버리지 보완 후 표시)" },
     "覆蓋率偏低，EV 僅供參考；新卡機的卡會隨 Index API 每日配額逐步補齊": { en: "Low coverage — EV is indicative only; new-machine cards fill in gradually via the Index API daily quota", ja: "カバレッジ低 — EV は参考値。新マシンのカードは Index API の日次配分で徐々に補完", ko: "커버리지 낮음 — EV는 참고용; 신규 머신 카드는 Index API 일일 할당으로 점진 보완" },
     "尚無資料。請跑": { en: "No data yet. Run", ja: "データなし。実行してください", ko: "데이터 없음. 실행" },
-    "產生 live_pool.db。": { en: "to generate live_pool.db.", ja: "で live_pool.db を生成。", ko: "하여 live_pool.db 생성." }
+    "產生 live_pool.db。": { en: "to generate live_pool.db.", ja: "で live_pool.db を生成。", ko: "하여 live_pool.db 생성." },
+
+    // ---- 外部比價頁 (price_search.html) ----
+    "🔍 PriceCharting 外部價格搜尋": { en: "🔍 PriceCharting External Price Search", ja: "🔍 PriceCharting 外部価格検索", ko: "🔍 PriceCharting 외부 가격 검색" },
+    "卡名 / 系列 / 卡號（混合搜尋）": { en: "Card / set / number (mixed search)", ja: "カード名 / セット / 番号（混合検索）", ko: "카드명 / 세트 / 번호 (혼합 검색)" },
+    "例：Temporal Forces Charizard ex 125": { en: "e.g. Temporal Forces Charizard ex 125", ja: "例：Temporal Forces Charizard ex 125", ko: "예: Temporal Forces Charizard ex 125" },
+    "分級機構":     { en: "Grader", ja: "鑑定機関", ko: "등급 기관" },
+    "— 未分級 —":   { en: "— Ungraded —", ja: "— 未鑑定 —", ko: "— 미등급 —" },
+    "搜尋":         { en: "Search", ja: "検索", ko: "검색" },
+    "快速範例：":   { en: "Quick examples:", ja: "クイック例：", ko: "빠른 예시:" },
+    "請輸入搜尋關鍵字": { en: "Please enter a search keyword", ja: "検索キーワードを入力してください", ko: "검색어를 입력하세요" },
+    "⏳ 搜尋中…":   { en: "⏳ Searching…", ja: "⏳ 検索中…", ko: "⏳ 검색 중…" },
+    "⏳ 載入價格…": { en: "⏳ Loading prices…", ja: "⏳ 価格読み込み中…", ko: "⏳ 가격 불러오는 중…" },
+    "查無結果，試著換關鍵字。": { en: "No results — try different keywords.", ja: "結果なし — 別のキーワードをお試しください。", ko: "결과 없음 — 다른 검색어를 시도하세요." },
+    "來源：":       { en: "Source: ", ja: "ソース：", ko: "출처: " },
+    "查無價格":     { en: "No price found", ja: "価格なし", ko: "가격 없음" },
+    "市場價格":     { en: "Market Price", ja: "市場価格", ko: "시장 가격" },
+    "查無各等級價格": { en: "No per-grade prices found", ja: "グレード別価格なし", ko: "등급별 가격 없음" },
+    "查詢等級":     { en: "queried grade", ja: "照会グレード", ko: "조회 등급" }
   };
 
   // ---- 內插字串（含數字/資料）用 regex pattern 處理 ----
@@ -399,6 +417,13 @@
       en: "$1/$2 tokens checked for real market price ｜ avg Renaiss FMV gap $3 ｜ updated $4",
       ja: "$1/$2 枚の実市場価を照会 ｜ 平均 Renaiss FMV 乖離 $3 ｜ 更新 $4",
       ko: "$1/$2 개 실시장가 조회 ｜ 평균 Renaiss FMV 격차 $3 ｜ 업데이트 $4" },
+    // 外部比價頁
+    { re: /^找到 (\d[\d,]*) 個結果 — 請選擇正確的卡片$/,
+      en: "Found $1 results — pick the correct card", ja: "$1 件の結果 — 正しいカードを選択", ko: "$1 개 결과 — 올바른 카드를 선택" },
+    { re: /^外部市場價（(.+)）$/,
+      en: "External market price ($1)", ja: "外部市場価（$1）", ko: "외부 시장가 ($1)" },
+    { re: /^❌ 連線失敗：(.+)$/,
+      en: "❌ Connection failed: $1", ja: "❌ 接続失敗：$1", ko: "❌ 연결 실패: $1" },
     // Live Pool 頁
     { re: /^更新於 (.+?) · 掃到區塊 (.+)$/,
       en: "Updated $1 · scanned to block $2", ja: "更新 $1 · ブロック $2 まで走査", ko: "업데이트 $1 · 블록 $2 까지 스캔" },
