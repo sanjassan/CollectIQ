@@ -86,9 +86,9 @@ function whenTxt(iso){
 
 function detail(e){
   const bits = [];
-  if(e.remaining != null) bits.push(`剩 <b>${Number(e.remaining).toLocaleString()}</b> 張`);
-  if(e.platform_ev_usd != null) bits.push(`官方EV <b>${usd(e.platform_ev_usd)}</b>`);
-  if(e.card) bits.push(`S 卡：<b>${e.card}</b>`);
+  if(e.remaining != null) bits.push(`<b>剩 ${Number(e.remaining).toLocaleString()} 張</b>`);
+  if(e.platform_ev_usd != null) bits.push(`<b>官方EV ${usd(e.platform_ev_usd)}</b>`);
+  if(e.card) bits.push(`<b>S 卡：${e.card}</b>`);
   if(e.slug) bits.push(`<span class="muted">${e.slug}</span>`);
   return bits.join(" · ");
 }

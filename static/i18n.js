@@ -120,6 +120,10 @@
     "暫無彩蛋資料": { en: "No easter-egg data yet", ja: "イースターエッグなし", ko: "이스터에그 없음" },
     "沒有符合條件的卡片": { en: "No matching cards", ja: "該当カードなし", ko: "해당 카드 없음" },
     "尚無限量卡機事件紀錄。": { en: "No limited-pack events yet.", ja: "限定パックイベントなし。", ko: "한정 팩 이벤트 없음." },
+    "類型：": { en: "Type:", ja: "タイプ：", ko: "유형:" },
+    "限量開放": { en: "Limited open", ja: "限定開放", ko: "한정 개방" },
+    "新卡機": { en: "New pack", ja: "新パック", ko: "새 팩" },
+    "抽出 S 卡": { en: "S-card pulled", ja: "S カード抽出", ko: "S 카드 배출" },
     "從左側選擇一張卡片": { en: "Pick a card on the left", ja: "左からカードを選択", ko: "왼쪽에서 카드 선택" },
     "系統將根據 CollectIQ 驗證價格": { en: "The system uses CollectIQ verified prices", ja: "CollectIQ 検証価格を使用", ko: "CollectIQ 검증 가격 사용" },
     "即時計算質押參數": { en: "to compute collateral params in real time", ja: "担保パラメータを即時計算", ko: "담보 파라미터 실시간 계산" },
@@ -251,6 +255,7 @@
     "借貸 / 流動性池": { en: "Lending / liquidity pools", ja: "貸借 / 流動性プール", ko: "대출 / 유동성 풀" },
     "Oracle 驗證卡片": { en: "Oracle-Verified Cards", ja: "Oracle 検証カード", ko: "Oracle 검증 카드" },
     "可質押總價值": { en: "Total Pledgeable Value", ja: "担保可能総額", ko: "총 담보 가능 가치" },
+    "組合總借款額度": { en: "Portfolio Total Borrow Limit", ja: "ポートフォリオ総借入枠", ko: "포트폴리오 총 대출 한도" },
     "平均 LTV": { en: "Average LTV", ja: "平均 LTV", ko: "평균 LTV" },
     "高信心卡片": { en: "High-Confidence Cards", ja: "高信頼カード", ko: "고신뢰 카드" },
     "📊 動態 LTV 分級": { en: "📊 Dynamic LTV Tiers", ja: "📊 動的 LTV 分級", ko: "📊 동적 LTV 등급" },
@@ -450,6 +455,13 @@
     { re: /^最近 (\d[\d,]*) 筆成交$/, en: "Last $1 sales", ja: "直近 $1 件の取引", ko: "최근 $1건 체결" },
     { re: /^\| 官方 EV:$/, en: "| Official EV:", ja: "| 公式 EV:", ko: "| 공식 EV:" },
     { re: /^\| 最近 (\d[\d,]*) 筆開包$/, en: "| last $1 opens", ja: "| 直近 $1 件の開封", ko: "| 최근 $1건 개봉" },
+    // 限量歷史頁 (limited_history.html)
+    { re: /^共 (\d[\d,]*) 筆$/, en: "$1 records", ja: "$1 件", ko: "$1 건" },
+    { re: /^剩 ([\d,]+) 張$/, en: "$1 left", ja: "残り $1 枚", ko: "$1 장 남음" },
+    { re: /^官方EV (\$[\d,.]+)$/, en: "Official EV $1", ja: "公式EV $1", ko: "공식 EV $1" },
+    { re: /^S 卡：(.+)$/, en: "S-card: $1", ja: "S カード：$1", ko: "S 카드: $1" },
+    // CDP 頁 (cdp.html) 動態
+    { re: /^(.+) · 驗證價 (\$[\d,.]+)$/, en: "$1 · Verified $2", ja: "$1 · 検証価 $2", ko: "$1 · 검증가 $2" },
     // 外部比價頁
     { re: /^找到 (\d[\d,]*) 個結果 — 請選擇正確的卡片$/,
       en: "Found $1 results — pick the correct card", ja: "$1 件の結果 — 正しいカードを選択", ko: "$1 개 결과 — 올바른 카드를 선택" },
