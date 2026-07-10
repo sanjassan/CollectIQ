@@ -378,7 +378,34 @@
     "查無價格":     { en: "No price found", ja: "価格なし", ko: "가격 없음" },
     "市場價格":     { en: "Market Price", ja: "市場価格", ko: "시장 가격" },
     "查無各等級價格": { en: "No per-grade prices found", ja: "グレード別価格なし", ko: "등급별 가격 없음" },
-    "查詢等級":     { en: "queried grade", ja: "照会グレード", ko: "조회 등급" }
+    "查詢等級":     { en: "queried grade", ja: "照会グレード", ko: "조회 등급" },
+
+    // ---- API 狀態頁 (api_status.html) ----
+    "▶ 執行全部驗證": { en: "▶ Run All Checks", ja: "▶ すべて検証を実行", ko: "▶ 전체 검증 실행" },
+    "⏳ 驗證中…":   { en: "⏳ Checking…", ja: "⏳ 検証中…", ko: "⏳ 검증 중…" },
+    "▶ 重新執行":   { en: "▶ Run Again", ja: "▶ 再実行", ko: "▶ 다시 실행" },
+    "待測":         { en: "Pending", ja: "未検証", ko: "대기" },
+    "❌ 失敗":      { en: "❌ Failed", ja: "❌ 失敗", ko: "❌ 실패" },
+    "尚未執行":     { en: "Not run yet", ja: "未実行", ko: "미실행" },
+    "所有卡機清單（含 EV、包價、頭獎 FMV）": { en: "All machines (with EV, pack price, jackpot FMV)", ja: "全マシン一覧（EV・パック価格・大当り FMV 含む）", ko: "전체 머신 목록 (EV·팩 가격·잭팟 FMV 포함)" },
+    "Platform API — GET /packs/omega（含開包紀錄）": { en: "Platform API — GET /packs/omega (with open history)", ja: "Platform API — GET /packs/omega（開封履歴付き）", ko: "Platform API — GET /packs/omega (개봉 기록 포함)" },
+    "最近 30 筆開包 FMV / tier": { en: "Last 30 opens: FMV / tier", ja: "直近 30 件の開封 FMV / tier", ko: "최근 30건 개봉 FMV / tier" },
+    "市場掛單卡片（FMV、掛單價、持有者）": { en: "Marketplace listings (FMV, ask price, holder)", ja: "マーケット出品カード（FMV・出品価・保有者）", ko: "마켓 등록 카드 (FMV·호가·보유자)" },
+    "外部市場定價搜尋（100 req/day 匿名限制）": { en: "External market pricing search (100 req/day anon limit)", ja: "外部市場価格検索（匿名 100 req/day 制限）", ko: "외부 시장 가격 검색 (익명 100 req/day 제한)" },
+    "跨平台最近成交紀錄（snkrdunk 等）": { en: "Recent cross-platform sales (snkrdunk, etc.)", ja: "クロスプラットフォーム直近取引（snkrdunk 等）", ko: "크로스 플랫폼 최근 체결 (snkrdunk 등)" },
+    "Pokemon TCG 整體市場指數": { en: "Pokemon TCG overall market index", ja: "Pokemon TCG 全体市場指数", ko: "Pokemon TCG 전체 시장 지수" },
+    "回傳空陣列":   { en: "Returned empty array", ja: "空配列を返却", ko: "빈 배열 반환" },
+    "卡機":         { en: "Machine", ja: "マシン", ko: "머신" },
+    "包價":         { en: "Pack Price", ja: "パック価格", ko: "팩 가격" },
+    "EV 倍率":      { en: "EV Ratio", ja: "EV 倍率", ko: "EV 배율" },
+    "系列":         { en: "Set", ja: "セット", ko: "세트" },
+    "外部市價":     { en: "External Price", ja: "外部市価", ko: "외부 시세" },
+    "成交價":       { en: "Sold Price", ja: "取引価", ko: "체결가" },
+    "平台":         { en: "Platform", ja: "プラットフォーム", ko: "플랫폼" },
+    "日期":         { en: "Date", ja: "日付", ko: "날짜" },
+    "無紀錄":       { en: "No records", ja: "記録なし", ko: "기록 없음" },
+    "無結果":       { en: "No results", ja: "結果なし", ko: "결과 없음" },
+    "查詢：":       { en: "Query: ", ja: "クエリ：", ko: "쿼리: " }
   };
 
   // ---- 內插字串（含數字/資料）用 regex pattern 處理 ----
@@ -417,6 +444,12 @@
       en: "$1/$2 tokens checked for real market price ｜ avg Renaiss FMV gap $3 ｜ updated $4",
       ja: "$1/$2 枚の実市場価を照会 ｜ 平均 Renaiss FMV 乖離 $3 ｜ 更新 $4",
       ko: "$1/$2 개 실시장가 조회 ｜ 평균 Renaiss FMV 격차 $3 ｜ 업데이트 $4" },
+    // API 狀態頁
+    { re: /^共 (\d[\d,]*) 張掛單$/, en: "$1 listings", ja: "$1 件の出品", ko: "$1 개 등록" },
+    { re: /^，共 (\d[\d,]*) 筆$/, en: ", $1 results", ja: "、$1 件", ko: ", $1 건" },
+    { re: /^最近 (\d[\d,]*) 筆成交$/, en: "Last $1 sales", ja: "直近 $1 件の取引", ko: "최근 $1건 체결" },
+    { re: /^\| 官方 EV:$/, en: "| Official EV:", ja: "| 公式 EV:", ko: "| 공식 EV:" },
+    { re: /^\| 最近 (\d[\d,]*) 筆開包$/, en: "| last $1 opens", ja: "| 直近 $1 件の開封", ko: "| 최근 $1건 개봉" },
     // 外部比價頁
     { re: /^找到 (\d[\d,]*) 個結果 — 請選擇正確的卡片$/,
       en: "Found $1 results — pick the correct card", ja: "$1 件の結果 — 正しいカードを選択", ko: "$1 개 결과 — 올바른 카드를 선택" },
