@@ -21,8 +21,8 @@ a{color:var(--blue);text-decoration:none}
 .hero h2{font-size:28px;font-weight:800;color:var(--purple)}
 .hero p{color:var(--muted);margin-top:8px;font-size:14px}
 
-.sim-layout{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-@media(max-width:768px){.sim-layout{grid-template-columns:1fr}}
+.sim-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px}
+@media(max-width:768px){.sim-layout{grid-template-columns:minmax(0,1fr)}}
 
 .card-picker{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px}
 .card-picker h3{font-size:14px;font-weight:700;margin-bottom:12px}
@@ -34,11 +34,11 @@ a{color:var(--blue);text-decoration:none}
 .card-item{display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:6px;transition:background .15s}
 .card-item:hover,.card-item.selected{background:rgba(88,166,255,.1)}
 .card-item.selected{border:1px solid var(--blue)}
-.card-thumb{width:48px;height:64px;object-fit:cover;border-radius:4px;background:var(--bg)}
+.card-thumb{width:48px;height:64px;object-fit:cover;border-radius:4px;background:var(--bg);flex-shrink:0}
 .card-info{flex:1;min-width:0}
 .card-info .name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.card-info .meta{font-size:11px;color:var(--muted)}
-.card-borrow{text-align:right}
+.card-info .meta{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-borrow{text-align:right;flex-shrink:0}
 .card-borrow .amt{font-size:16px;font-weight:800;color:var(--purple)}
 .card-borrow .conf{font-size:11px}
 .conf-high{color:var(--green)}
@@ -56,7 +56,7 @@ a{color:var(--blue);text-decoration:none}
 .selected-card .title{font-size:15px;font-weight:700;margin-top:8px}
 .selected-card .grade{font-size:12px;color:var(--muted)}
 
-.cdp-metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+.cdp-metrics{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-bottom:20px}
 .cdp-metric{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center}
 .cdp-metric .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
 .cdp-metric .val{font-size:22px;font-weight:800;margin-top:4px}
