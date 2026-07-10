@@ -637,6 +637,7 @@
       "color:#8b949e;padding:5px 8px;border-radius:6px;min-width:24px;text-align:center}" +
       "#ciq-lang button:hover{color:#e6edf3}" +
       "#ciq-lang button.active{background:#1f6feb;color:#fff}" +
+      "@media(min-width:481px){nav{padding-right:180px}}" +
       "@media(max-width:480px){#ciq-lang{top:6px;right:6px}#ciq-lang button{padding:4px 6px;font-size:11px}}";
     document.head.appendChild(style);
     document.body.appendChild(box);
