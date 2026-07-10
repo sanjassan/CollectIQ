@@ -196,7 +196,45 @@
     "PriceCharting 彙整 eBay 成交，獨立可查證":
       { en: "PriceCharting aggregates eBay sales — independent and verifiable",
         ja: "PriceCharting は eBay 取引を集約、独立して検証可能",
-        ko: "PriceCharting은 eBay 체결을 집계 — 독립적이고 검증 가능" }
+        ko: "PriceCharting은 eBay 체결을 집계 — 독립적이고 검증 가능" },
+
+    // ---- Price Intel 頁 (intelligence.html) ----
+    "⚙️ 背景數據建置中": { en: "⚙️ Building data in background", ja: "⚙️ バックグラウンドでデータ構築中", ko: "⚙️ 백그라운드 데이터 구축 중" },
+    "Token 總數":   { en: "Total Tokens", ja: "トークン総数", ko: "총 토큰 수" },
+    "Renaiss FMV 虛高 >100%": { en: "Renaiss FMV inflated >100%", ja: "Renaiss FMV 過大 >100%", ko: "Renaiss FMV 과대 >100%" },
+    "Renaiss FMV 低估 <−20%": { en: "Renaiss FMV underpriced <−20%", ja: "Renaiss FMV 過小 <−20%", ko: "Renaiss FMV 저평가 <−20%" },
+    "平均 FMV 落差%": { en: "Avg FMV gap %", ja: "平均 FMV 乖離%", ko: "평균 FMV 격차%" },
+    "Renaiss 總 FMV (USD)": { en: "Total Renaiss FMV (USD)", ja: "Renaiss 総 FMV (USD)", ko: "총 Renaiss FMV (USD)" },
+    "真實市場總 FMV (USD)": { en: "Total Real-Market FMV (USD)", ja: "実市場総 FMV (USD)", ko: "실시장 총 FMV (USD)" },
+    "📊 FMV 落差排行": { en: "📊 FMV Gap Ranking", ja: "📊 FMV 乖離ランキング", ko: "📊 FMV 격차 순위" },
+    "🐋 鯨魚錢包": { en: "🐋 Whale Wallets", ja: "🐋 クジラウォレット", ko: "🐋 고래 지갑" },
+    "🎲 開包 True EV": { en: "🎲 Pack True EV", ja: "🎲 開封 True EV", ko: "🎲 팩 True EV" },
+    "Renaiss 虛高 (gap > 0)": { en: "Renaiss inflated (gap > 0)", ja: "Renaiss 過大 (gap > 0)", ko: "Renaiss 과대 (gap > 0)" },
+    "Renaiss 低估 (gap < 0)": { en: "Renaiss underpriced (gap < 0)", ja: "Renaiss 過小 (gap < 0)", ko: "Renaiss 저평가 (gap < 0)" },
+    "大落差 (>100% or <−30%)": { en: "Big gap (>100% or <−30%)", ja: "大乖離 (>100% or <−30%)", ko: "큰 격차 (>100% or <−30%)" },
+    "高信心（Index 高信心）": { en: "High confidence (Index high)", ja: "高信頼（Index 高）", ko: "고신뢰 (Index 높음)" },
+    "卡名":         { en: "Card", ja: "カード名", ko: "카드명" },
+    "真實市場價":  { en: "Real Market Price", ja: "実市場価", ko: "실시장가" },
+    "落差%":        { en: "Gap %", ja: "乖離%", ko: "격차%" },
+    "落差 USD":     { en: "Gap USD", ja: "乖離 USD", ko: "격차 USD" },
+    "信心":         { en: "Confidence", ja: "信頼度", ko: "신뢰도" },
+    "最近成交":     { en: "Last Sale", ja: "直近取引", ko: "최근 체결" },
+    "連結":         { en: "Link", ja: "リンク", ko: "링크" },
+    "FMV虛高":      { en: "FMV inflated", ja: "FMV 過大", ko: "FMV 과대" },
+    "低估":         { en: "Underpriced", ja: "過小評価", ko: "저평가" },
+    "錢包地址":     { en: "Wallet Address", ja: "ウォレットアドレス", ko: "지갑 주소" },
+    "真實 FMV":     { en: "Real FMV", ja: "実 FMV", ko: "실 FMV" },
+    "平均落差%":    { en: "Avg Gap %", ja: "平均乖離%", ko: "평균 격차%" },
+    "帳面風險 USD": { en: "Paper Risk USD", ja: "含み損リスク USD", ko: "장부 위험 USD" },
+    "最高值持倉":   { en: "Top Holding", ja: "最高額保有", ko: "최고가 보유" },
+    "開抽價":       { en: "Pack Price", ja: "開封価格", ko: "개봉가" },
+    "頭獎 FMV":     { en: "Jackpot FMV", ja: "大当り FMV", ko: "잭팟 FMV" },
+    "搜尋卡名 / serial…": { en: "Search card name / serial…", ja: "カード名 / シリアル検索…", ko: "카드명 / 시리얼 검색…" },
+    "搜尋錢包地址…": { en: "Search wallet address…", ja: "ウォレットアドレス検索…", ko: "지갑 주소 검색…" },
+    "⚠️ 經驗 EV 使用 Renaiss 官方 FMV 計算。若 FMV 整體虛高，實際 EV 可能更低。":
+      { en: "⚠️ Empirical EV is computed with Renaiss's official FMV. If FMV is broadly inflated, real EV may be lower.",
+        ja: "⚠️ 経験 EV は Renaiss 公式 FMV で算出。FMV が全体的に過大なら実際の EV はさらに低い可能性。",
+        ko: "⚠️ 경험 EV는 Renaiss 공식 FMV로 계산. FMV가 전반적으로 과대하면 실제 EV는 더 낮을 수 있음." }
   };
 
   // ---- 內插字串（含數字/資料）用 regex pattern 處理 ----
@@ -225,7 +263,20 @@
       ja: "$1 · 計 $2 枚 · 検証済 $3 枚 · 過小評価 $4 / 高値 $5 / 一致 $6 / 未検証 $7",
       ko: "$1 · 총 $2 장 · 검증 $3 장 · 저평가 $4 / 고평가 $5 / 일치 $6 / 미검증 $7" },
     { re: /^載入失敗：(.+)$/,
-      en: "Load failed: $1", ja: "読み込み失敗：$1", ko: "불러오기 실패: $1" }
+      en: "Load failed: $1", ja: "読み込み失敗：$1", ko: "불러오기 실패: $1" },
+    // Price Intel 頁
+    { re: /^(\d[\d,]*) 筆$/, en: "$1 rows", ja: "$1 件", ko: "$1 건" },
+    { re: /^(\d[\d,]*) 個錢包$/, en: "$1 wallets", ja: "$1 ウォレット", ko: "$1 지갑" },
+    { re: /^經驗 EV（最近 (\d[\d,]*) 筆）$/,
+      en: "Empirical EV (last $1)", ja: "経験 EV（直近 $1 件）", ko: "경험 EV (최근 $1건)" },
+    { re: /^共 (\d[\d,]*)\/(\d[\d,]*) 枚已查真實市場價 ｜ 平均 Renaiss FMV 落差 (.+?) ｜ 更新於 (.+)$/,
+      en: "$1/$2 tokens checked for real market price ｜ avg Renaiss FMV gap $3 ｜ updated $4",
+      ja: "$1/$2 枚の実市場価を照会 ｜ 平均 Renaiss FMV 乖離 $3 ｜ 更新 $4",
+      ko: "$1/$2 개 실시장가 조회 ｜ 평균 Renaiss FMV 격차 $3 ｜ 업데이트 $4" },
+    { re: /^以下是每個卡機的 True EV 重算：[\s\S]*背後的真實風險。$/,
+      en: "Below is a True-EV recomputation for each machine: Renaiss's official FMV is swapped for the Index API's real market price and expected value is recalculated, revealing the real risk behind the official EV.",
+      ja: "以下は各マシンの True EV 再計算：Renaiss 公式 FMV を Index API の実市場価に置き換えて期待値を再計算し、公式 EV の裏にある実際のリスクを可視化します。",
+      ko: "아래는 각 머신의 True EV 재계산: Renaiss 공식 FMV를 Index API 실시장가로 교체해 기대값을 다시 계산하여 공식 EV 뒤의 실제 위험을 보여줍니다." }
   ];
 
   const LANGS = ["zh", "en", "ja", "ko"];
