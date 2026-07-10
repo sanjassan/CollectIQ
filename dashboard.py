@@ -47,7 +47,7 @@ def api_holdings():
             import build_holdings
             build_holdings.build()
         except Exception as e:
-            return jsonify({"error": f"holdings 尚未生成且即時建立失敗: {e}"}), 500
+            return jsonify({"error": f"holdings not generated and on-the-fly build failed: {e}"}), 500
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     if request.args.get("identified") == "1":
@@ -73,7 +73,7 @@ def api_pulls():
     base = os.path.dirname(os.path.abspath(__file__))
     db = os.path.join(base, "data", "onchain_pulls.db")
     if not os.path.exists(db):
-        return jsonify({"pulls": [], "note": "onchain_pulls.db 尚未產生"})
+        return jsonify({"pulls": [], "note": "onchain_pulls.db not generated yet"})
     try:
         min_fmv = float(request.args.get("min_fmv", 0) or 0)
     except Exception:
@@ -147,7 +147,7 @@ def api_marketplace():
     base = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(base, "data", "marketplace_listed.json")
     if not os.path.exists(path):
-        return jsonify({"cards": [], "total": 0, "note": "marketplace_listed.json 尚未產生"})
+        return jsonify({"cards": [], "total": 0, "note": "marketplace_listed.json not generated yet"})
     with open(path, encoding="utf-8") as f:
         rows = json.load(f)
     if not isinstance(rows, list):
@@ -263,7 +263,7 @@ def api_new_pack():
 
     # 3) Empty state: there really is no open/recent limited pack right now
     if chosen is None:
-        return jsonify({"empty": True, "note": "目前無開放中限量卡機"})
+        return jsonify({"empty": True, "note": "No limited pack is currently open"})
 
     name = chosen.get("name")
     pid = total = None
@@ -423,7 +423,7 @@ def api_pool_addresses():
     """On-chain pack contract addresses (known + suspected new-pack candidates). Produced by discover_pools.py."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "pool_addresses.json")
     if not os.path.exists(path):
-        return jsonify({"known": [], "candidates": [], "note": "尚未產生，請跑 scripts/discover_pools.py"})
+        return jsonify({"known": [], "candidates": [], "note": "Not generated yet — run scripts/discover_pools.py"})
     with open(path, encoding="utf-8") as f:
         return jsonify(json.load(f))
 
@@ -470,7 +470,7 @@ def api_live_pool():
     """Target pool status summary + countdown. Use ?address= to specify a pool."""
     conn = _live_db()
     if not conn:
-        return jsonify({"available": False, "note": "尚未產生，請跑 scripts/pool_live_monitor.py"})
+        return jsonify({"available": False, "note": "Not generated yet — run scripts/pool_live_monitor.py"})
     addr = request.args.get("address", "").lower()
     row = (conn.execute("SELECT * FROM pool_meta WHERE address=?", (addr,)).fetchone()
            if addr else _active_pool_row(conn))
@@ -687,7 +687,7 @@ def api_core_lucky():
     Params: ?min_luck=1.5 ?limit=50"""
     conn = _core_db()
     if not conn:
-        return jsonify({"available": False, "note": "尚未建立 collectiq_core.db"})
+        return jsonify({"available": False, "note": "collectiq_core.db not created yet"})
     min_luck = float(request.args.get("min_luck", 1.5))
     limit = int(request.args.get("limit", 50))
     rows = conn.execute("""
@@ -797,7 +797,7 @@ def api_core_packs():
     ?stage=countdown shows only the ones about to open."""
     conn = _core_db()
     if not conn:
-        return jsonify({"available": False, "note": "尚未建立 collectiq_core.db"})
+        return jsonify({"available": False, "note": "collectiq_core.db not created yet"})
     stage = request.args.get("stage")
     where = "WHERE pack_stage = ?" if stage else ""
     args = (stage,) if stage else ()
@@ -885,7 +885,7 @@ def api_core_pack_tiers(pack_id):
                             ORDER BY captured_at DESC LIMIT 1""").fetchone()
         if not r:
             conn.close()
-            return jsonify({"available": False, "note": "目前沒有倒數中的卡機"})
+            return jsonify({"available": False, "note": "No pack is currently counting down"})
         pack_id = r["pack_id"]
     meta = conn.execute(
         "SELECT pack_name, pack_stage, COUNT(*) AS slots FROM pack_content WHERE pack_id=?",
@@ -1215,7 +1215,7 @@ def api_comparison():
     """
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "comparison.json")
     if not os.path.exists(path):
-        return jsonify({"error": "comparison.json 尚未生成，請先跑 scripts/build_comparison.py",
+        return jsonify({"error": "comparison.json not generated yet — run scripts/build_comparison.py first",
                         "rows": [], "summary": {}}), 200
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
@@ -1677,7 +1677,7 @@ def api_price_search():
     from our_price import _grade_label
     q = request.args.get("q", "").strip()
     if not q:
-        return jsonify({"error": "q 參數必填"}), 400
+        return jsonify({"error": "q parameter is required"}), 400
 
     grader = request.args.get("grader", "").strip()
     grade  = request.args.get("grade", "").strip()
@@ -1732,7 +1732,7 @@ def api_price_by_url():
     from our_price import _grade_label
     url = request.args.get("url", "").strip()
     if not url or "pricecharting.com" not in url:
-        return jsonify({"error": "url 必須是 pricecharting.com 的連結"}), 400
+        return jsonify({"error": "url must be a pricecharting.com link"}), 400
 
     grader = request.args.get("grader", "").strip()
     grade  = request.args.get("grade", "").strip()
@@ -1943,7 +1943,7 @@ def api_card_lookup():
     from our_price import _grade_label
     q = request.args.get("q", "").strip()
     if not q:
-        return jsonify({"error": "q 參數必填（卡片名稱）"}), 400
+        return jsonify({"error": "q parameter is required (card name)"}), 400
     grader = request.args.get("grader", "").strip()
     grade = request.args.get("grade", "").strip()
 
@@ -1977,7 +1977,7 @@ def api_card_lookup():
             }
         elif results:
             out["independent"] = {"source": "pricecharting_ebay", "candidates": results[:12],
-                                  "independent": True, "note": "多筆候選，請點選正確卡"}
+                                  "independent": True, "note": "Multiple candidates — pick the correct card"}
     except Exception as e:
         out["independent"] = {"error": f"{type(e).__name__}: {e}"}
 
@@ -1985,7 +1985,7 @@ def api_card_lookup():
     try:
         hits = renaiss_api.search_cards(q, limit=6)
         out["renaiss_index"] = {
-            "source": "renaiss_index", "label": "Renaiss 自家指數（非獨立第三方）",
+            "source": "renaiss_index", "label": "Renaiss in-house index (non-independent, first-party)",
             "independent": False,
             "results": [{"name": h.get("name"), "grade": h.get("gradeLabel"),
                          "price_usd": h.get("price_usd")} for h in hits],
@@ -2008,7 +2008,7 @@ def api_card_lookup():
             conn.close()
             out["renaiss_buyback"] = {
                 "source": "pack_content",
-                "label": "Renaiss 收購價（回購）＋ luck = 市價 / 收購",
+                "label": "Renaiss buyback price + luck = market / buyback",
                 "results": [dict(r) for r in rows],
             }
     except Exception as e:
@@ -2028,7 +2028,7 @@ def api_wallet(addr):
     import sqlite3 as _sq
     addr = (addr or "").strip().lower()
     if not addr.startswith("0x") or len(addr) != 42:
-        return jsonify({"error": "地址格式不正確（需 0x + 40 hex）"}), 400
+        return jsonify({"error": "Invalid address format (expected 0x + 40 hex)"}), 400
     limit = min(int(request.args.get("limit", 100)), 500)
     base = os.path.dirname(os.path.abspath(__file__))
 
@@ -2183,7 +2183,7 @@ def api_pack_activity():
     try:
         packs = renaiss_api.get_packs(include_inactive=False)
     except Exception as e:
-        return jsonify({"error": f"取卡機清單失敗：{e}"}), 502
+        return jsonify({"error": f"Failed to fetch pack list: {e}"}), 502
     machines = []
     for pk in packs:
         slug = pk.get("slug")
@@ -2222,7 +2222,7 @@ def api_prize_pool():
     limit = min(int(request.args.get("limit", 200)), 1000)
     conn = _core_db()
     if not conn:
-        return jsonify({"error": "尚未建立 collectiq_core.db"}), 503
+        return jsonify({"error": "collectiq_core.db not created yet"}), 503
     # slug -> pack_name (matched against the Renaiss catalog name)
     if slug and not pack_name:
         try:
@@ -2233,7 +2233,7 @@ def api_prize_pool():
             pass
     if not pack_name:
         conn.close()
-        return jsonify({"error": "需提供 slug 或 pack_name"}), 400
+        return jsonify({"error": "slug or pack_name is required"}), 400
     rows = conn.execute(
         """SELECT tier, name, cert, grader, grade, year, image_url,
                   renaiss_buyback_usd, market_price_usd, luck_value,
