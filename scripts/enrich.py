@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-enrich.py — 補資料管線：Index API 優先佇列 + 卡牌圖片本地快取。
+enrich.py — enrichment pipeline: Index API priority queue + local card-image cache.
 
-兩個問題本檔各處理一半：
-  1) Index API 每日僅 100 筆匿名配額。既有 build_universe.enrich_from_index
-     只依 renaiss_fmv 排序，不知道「哪些卡正在活躍池內 / 剛被抽走 / 是大獎」。
-     build_enrich_queue() 依池脈絡計算 priority，讓每日配額優先花在最有價值的卡。
-  2) dim_card 只存 image_url，原始 URL 失效就丟圖。cache_images() 落地到
-     data/img/{token_id}.jpg 並回填 dim_card.image_local。
+This file addresses two problems, one half each:
+  1) The Index API allows only 100 anonymous requests per day. The existing
+     build_universe.enrich_from_index sorts only by renaiss_fmv and has no idea
+     "which cards are currently in an active pool / just got pulled / are grand prizes".
+     build_enrich_queue() computes a priority from pool context so the daily quota
+     is spent on the most valuable cards first.
+  2) dim_card only stores image_url, so images are lost when the original URL breaks.
+     cache_images() saves them to data/img/{token_id}.jpg and backfills dim_card.image_local.
 
-用法：
-  python3 enrich.py queue                 # 重建優先佇列
-  python3 enrich.py images [--limit N]    # 下載前 N 個待快取圖片（依 priority）
+Usage:
+  python3 enrich.py queue                 # rebuild the priority queue
+  python3 enrich.py images [--limit N]    # download the first N pending images to cache (by priority)
 """
 from __future__ import annotations
 
@@ -28,20 +30,20 @@ BIG_FMV = 300.0
 
 
 def build_enrich_queue(core) -> dict:
-    """重建 enrich_queue：找出缺 Index 真實價的卡，依池脈絡排優先序。
+    """Rebuild enrich_queue: find cards missing a real Index price, ordered by pool context.
 
-    priority 分數（越大越先查）：
-      + 2000  大獎（renaiss_fmv >= BIG_FMV）
-      + 1000  目前在活躍池內（fact_holding.status='in_pool'）
-      +  500  目前被錢包持有（可能剛被抽走）
-      + min(renaiss_fmv, 900)  價值加權
+    priority score (higher = queried sooner):
+      + 2000  grand prize (renaiss_fmv >= BIG_FMV)
+      + 1000  currently in an active pool (fact_holding.status='in_pool')
+      +  500  currently held by a wallet (possibly just pulled)
+      + min(renaiss_fmv, 900)  value weighting
     """
-    # 每 token 最新 fmv 快照是否已有 index 價
+    # Whether each token's latest fmv snapshot already has an index price
     have_idx = {str(t) for (t,) in core.execute(
         "SELECT DISTINCT token_id FROM fmv_snapshots "
         "WHERE index_price_usd IS NOT NULL").fetchall()}
 
-    # 候選：dim_card 有圖或有 renaiss 基準，且尚無 index 價
+    # Candidates: dim_card has an image or a renaiss baseline, and no index price yet
     rows = core.execute("""
         SELECT d.token_id, d.tier, d.image_url,
                fh.status,
@@ -77,7 +79,7 @@ def build_enrich_queue(core) -> dict:
 
 
 def cache_images(core, limit: int = 50) -> dict:
-    """下載尚未快取的圖片到 data/img/，回填 dim_card.image_local。依 priority。"""
+    """Download not-yet-cached images to data/img/ and backfill dim_card.image_local, by priority."""
     import requests
     IMG_DIR.mkdir(parents=True, exist_ok=True)
     rows = core.execute("""

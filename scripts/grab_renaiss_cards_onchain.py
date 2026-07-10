@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""抓取 Renaiss gacha 合約事件，反向推導所有卡資訊。
+"""Scrape Renaiss gacha contract events and reverse-derive all card info.
 
-⚠️ 此鏈上軌道為「選用/實驗性」：合約 ABI 為推測，且公開 BSC RPC 常逾時。
-主要資料來源請用 sync_renaiss_marketplace.py（tRPC）與 sync_open_monitor.py。
-本腳本失敗時會優雅退出（return），不會中斷整體流程。
+⚠️ This on-chain track is optional/experimental: the contract ABI is inferred, and public BSC RPCs
+often time out. For primary data sources, use sync_renaiss_marketplace.py (tRPC) and sync_open_monitor.py.
+On failure this script exits gracefully (return) without interrupting the overall pipeline.
 """
 from web3 import Web3
 import json
 import os
 
-# Renaiss 合約地址（從官網源碼找到）
+# Renaiss contract address (found in the official site's source)
 RENAISS_CONTRACT = "0x4D7b5dE3188323f44a741C712336c8549C9f9F26"
-# 多個公開 BSC RPC 後援：任一可用即繼續，全部逾時才放棄。
+# Multiple public BSC RPC fallbacks: proceed on the first that works, give up only if all time out.
 BNB_RPCS = [
     os.getenv("BNB_RPC", "").strip(),
     "https://bsc-dataseed.bnbchain.org",
@@ -41,7 +41,7 @@ def main() -> int:
     return _scrape(w3)
 
 
-# 合約 ABI（從 Renaiss 官網找到的 gacha 函數，屬推測，可能與實際合約不符）
+# Contract ABI (gacha functions found on the Renaiss site; inferred, may not match the real contract)
 ABI = [
     {
         "constant": False,
@@ -87,15 +87,15 @@ ABI = [
 def _scrape(w3) -> int:
     contract = w3.eth.contract(address=RENAISS_CONTRACT, abi=ABI)
 
-    # 抓總卡數
+    # Fetch the total card count
     try:
         total = contract.functions.totalCards().call()
         print(f"✅ 總卡數: {total}")
     except Exception as e:  # noqa: BLE001
         print(f"⚠️ totalCards() 失敗: {e}")
-        total = 100  # 預設抓 100 張
+        total = 100  # default to fetching 100
 
-    # 抓所有卡資訊
+    # Fetch info for all cards
     cards = []
     for i in range(total):
         try:
@@ -105,7 +105,7 @@ def _scrape(w3) -> int:
                 "id": int(card_id),
                 "name": name,
                 "rarity": int(rarity),
-                "price": int(price) / 1e18  # BNB 單位轉 ETH
+                "price": int(price) / 1e18  # convert from BNB units to ETH
             })
         except Exception as e:  # noqa: BLE001
             print(f"❌ card {i} 抓取失敗: {e}")
@@ -115,7 +115,7 @@ def _scrape(w3) -> int:
         print("⚠️  鏈上未取得任何卡（ABI 可能不符或合約無此介面）；不覆寫資料。")
         return 1
 
-    # 存檔
+    # Save to file
     os.makedirs("data", exist_ok=True)
     with open("data/renaiss_cards_onchain.json", "w", encoding="utf-8") as f:
         json.dump(cards, f, indent=2, ensure_ascii=False)

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Renaiss 抽卡逐筆追蹤器 —— 永久累積「哪張卡 / 何時 / 被誰抽走」。
+"""Per-pull tracker for Renaiss pulls — permanently accumulates "which card / when / pulled by whom".
 
-資料來源：open-monitor 公開 API（已內建鏈上爬蟲），不需要自架 BNB RPC。
-  - /api/packs            ：列出所有卡池（自動涵蓋未來新開的週五限時卡機）
-  - /api/recent-pulls     ：逐筆抽卡，含 user_address(誰) / pulled_at(何時) / tx_hash
+Data source: the open-monitor public API (which already includes an on-chain scraper); no self-hosted BNB RPC needed.
+  - /api/packs            : lists all pools (automatically covers future Friday limited pools as they open)
+  - /api/recent-pulls     : per-pull records, including user_address (who) / pulled_at (when) / tx_hash
 
-設計重點：
-  - 用 SQLite 永久保存，主鍵 tx_hash 去重 → 多次輪詢同一視窗不會重覆，
-    且超過 API 視窗的舊紀錄不會遺失（一旦寫入就永久留存）。
-  - 每輪自動重新抓 packs，新卡池一上線就會被納入追蹤。
-  - 高頻輪詢（建議 5 分鐘）配合大 limit，限時卡機暴量也不漏。
+Design notes:
+  - Stored permanently in SQLite with tx_hash as the primary key for dedup → polling the same window
+    multiple times never duplicates, and old records beyond the API window aren't lost (once written, kept forever).
+  - Re-fetches packs each round, so a new pool is tracked as soon as it goes live.
+  - High-frequency polling (5 minutes recommended) with a large limit means no misses even during a limited pool's burst.
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ def main() -> int:
         for pull in pulls:
             tx = (pull.get("tx_hash") or "").strip()
             if not tx:
-                # 無 tx_hash 時用 id 當主鍵，避免漏記
+                # When tx_hash is missing, use id as the primary key to avoid dropping the record
                 tx = f"id:{pull.get('id')}"
             cur = conn.execute(
                 """

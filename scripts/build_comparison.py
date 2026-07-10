@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-建立「Renaiss 內部價 vs 我們自抓外部價」比較表 → data/comparison.json
+Build a "Renaiss internal price vs. our independently scraped external price" comparison table → data/comparison.json
 
-- 預設只跑 marketplace_listed.json（Renaiss 正在 SELL 掛單的卡，最有行動價值）。
-- 透過 our_price.py 的快取可續跑（resumable）；重跑只補沒抓過/過期的。
-- 對外部站台節流（throttle），不過度呼叫。
+- By default only processes marketplace_listed.json (cards Renaiss is actively SELLING, the most actionable).
+- Resumable via our_price.py's cache; a rerun only fills in what hasn't been scraped or has expired.
+- Throttles external sites so they aren't over-called.
 
-用法：
-  python scripts/build_comparison.py            # 跑全部在售卡（會花時間）
-  python scripts/build_comparison.py --limit 30 # 只跑前 30 張（驗證用）
-  python scripts/build_comparison.py --all       # 跑 marketplace_all.json（4080 張，慎用）
-  python scripts/build_comparison.py --force      # 忽略快取重抓
+Usage:
+  python scripts/build_comparison.py            # process all listed cards (takes a while)
+  python scripts/build_comparison.py --limit 30 # only the first 30 cards (for validation)
+  python scripts/build_comparison.py --all       # process marketplace_all.json (4080 cards, use with care)
+  python scripts/build_comparison.py --force      # ignore the cache and re-scrape
 """
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def main() -> int:
         rows.append(compare_card(card, our))
         if i % 10 == 0:
             chk.save_cache()
-            # 增量落地，隨時可看
+            # Persist incrementally so it can be viewed at any time
             out.write_text(json.dumps({
                 "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "source_file": src.name,

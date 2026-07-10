@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Easy EV Monitor v2 - External Price Checker
-整合 snkr、price chart 等外部網站進行比價
+Aggregates external sites such as snkr and price chart for price comparison
 """
 
 import json
@@ -15,8 +15,8 @@ from bs4 import BeautifulSoup
 
 class ExternalPriceChecker:
     """
-    從外部來源取得市場價格
-    支援: snkr、price chart 等平台
+    Fetch market prices from external sources.
+    Supports platforms such as snkr and price chart.
     """
 
     def __init__(self):
@@ -44,11 +44,12 @@ class ExternalPriceChecker:
 
     def get_market_price(self, card_name: str, card_id: str = None) -> Dict:
         """
-        獲取卡片的市場價格（僅彙整「真實」外部來源的平均）。
+        Get a card's market price (aggregating only the average of "real" external sources).
 
-        重要：若沒有任何外部來源回傳有效價格，回傳 market_price=None 且
-        sources=0，明確標示「未知」，**不再捏造** $500/$200/$50 之類的假價格。
-        由呼叫端決定要不要沿用既有 FMV（見 batch_get_prices）。
+        Important: if no external source returns a valid price, return
+        market_price=None and sources=0, explicitly marking it "unknown", and
+        **no longer fabricate** fake prices like $500/$200/$50. The caller
+        decides whether to keep the existing FMV (see batch_get_prices).
         """
         cache_key = card_id or card_name
 

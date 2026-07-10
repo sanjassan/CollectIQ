@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-renaiss_api.py — Renaiss 平台 API + Index API 統一封裝層
+renaiss_api.py -- unified wrapper for the Renaiss platform API + Index API.
 
-兩個後端：
-  RENAISS_BASE  = https://api.renaiss.xyz/v0  (卡機 / 市場 / 持有資料)
-  INDEX_BASE    = https://api.renaissos.com/v1 (卡片指數 / 定價 / 成交紀錄)
+Two backends:
+  RENAISS_BASE  = https://api.renaiss.xyz/v0  (packs / marketplace / holdings)
+  INDEX_BASE    = https://api.renaissos.com/v1 (card indices / pricing / trade records)
 
-快取：同一 key 5 分鐘內不重抓。
+Caching: the same key is not re-fetched within 5 minutes.
 """
 
 from __future__ import annotations
@@ -16,29 +16,29 @@ from typing import Dict, List, Optional
 
 import requests
 
-# ─── 設定 ────────────────────────────────────────────────────────────────────
+# ─── Configuration ───────────────────────────────────────────────────────────
 RENAISS_BASE = "https://api.renaiss.xyz/v0"
 INDEX_BASE   = "https://api.renaissos.com/v1"
-CACHE_TTL    = 300   # 秒（平台 API）
-INDEX_TTL    = 900   # 秒（Index API 較常 429、資料變動慢 → 拉長快取）
-TIMEOUT      = 20    # 秒
-MAX_RETRIES  = 3     # 429/5xx 重試次數
-BACKOFF_BASE = 1.5   # 秒，指數退避基數
+CACHE_TTL    = 300   # seconds (platform API)
+INDEX_TTL    = 900   # seconds (Index API 429s more often and changes slowly -> longer cache)
+TIMEOUT      = 20    # seconds
+MAX_RETRIES  = 3     # 429/5xx retry count
+BACKOFF_BASE = 1.5   # seconds, exponential backoff base
 
 HEADERS = {"Accept": "application/json", "User-Agent": "renaiss-ev-monitor/2.0"}
 
 
 def _retry_after(resp) -> Optional[float]:
-    """解析 Retry-After 標頭（秒數格式）；非數字或缺失回 None。"""
+    """Parse the Retry-After header (seconds format); returns None if non-numeric or missing."""
     val = resp.headers.get("Retry-After")
     if not val:
         return None
     try:
-        return min(float(val), 30.0)   # 上限 30s，別讓單次抓卡太久
+        return min(float(val), 30.0)   # cap at 30s so a single fetch doesn't take too long
     except ValueError:
         return None
 
-# ─── 快取 ─────────────────────────────────────────────────────────────────────
+# ─── Cache ────────────────────────────────────────────────────────────────────
 _cache: Dict[str, dict] = {}
 
 
@@ -54,8 +54,10 @@ def _cached(key: str, fn, ttl: int = CACHE_TTL):
 def _get(base: str, path: str, params: dict = None) -> dict:
     """HTTP GET with cache.
 
-    Index API（api.renaissos.com）偶爾回 429/5xx，這裡對這幾種狀態做指數退避重試；
-    全部失敗時回退到最後一次成功的快取值（即使過期），避免整頁破圖。"""
+    The Index API (api.renaissos.com) occasionally returns 429/5xx; this
+    retries those statuses with exponential backoff, and if all attempts fail,
+    falls back to the last successful cached value (even if stale) to avoid a
+    fully broken page."""
     params = params or {}
     key = f"{base}{path}?{'&'.join(f'{k}={v}' for k,v in sorted(params.items()))}"
 
@@ -75,7 +77,7 @@ def _get(base: str, path: str, params: dict = None) -> dict:
                     print(f"[renaiss_api] GET {base}{path} failed after {MAX_RETRIES} tries: {e}")
                     break
                 time.sleep(BACKOFF_BASE * (2 ** attempt))
-        # 全部失敗：若有過期快取，回退舊值總比空白好
+        # All attempts failed: if a stale cache exists, an old value beats a blank
         stale = _cache.get(key)
         if stale:
             print(f"[renaiss_api] serving stale cache for {path} (age {round(time.time()-stale['ts'])}s)")
@@ -91,15 +93,15 @@ def _get(base: str, path: str, params: dict = None) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def get_packs(include_inactive: bool = False) -> List[dict]:
-    """所有卡機清單（slug / name / priceInUsdt / expectedValueInUsd / featuredCardFmvInUsd）。
+    """List of all packs (slug / name / priceInUsdt / expectedValueInUsd / featuredCardFmvInUsd).
 
-    已知卡機總覽（2026-07-03）：
+    Known packs overview (2026-07-03):
       Active perpetual : eden-pack ($150), omega ($48), renacrypt-pack ($88)
       Archived limited : bowtie/ribbon/plasma/starry/magma/costume/legacy-7,8,9/aura/destiny
-      Live limited     : world-cup-pack（已上線，?includeInactive=true 原生回傳）
+      Live limited     : world-cup-pack (live; returned natively by ?includeInactive=true)
 
-    注意：archived 限量包的 /v0/packs/{slug} 端點回傳 404，
-          只有 ?includeInactive=true 清單有基本資訊（無開包記錄）。
+    Note: the /v0/packs/{slug} endpoint returns 404 for archived limited packs;
+          only the ?includeInactive=true list has basic info (no pull records).
     """
     import re as _re
     params = {"includeInactive": "true"} if include_inactive else {}
@@ -107,18 +109,20 @@ def get_packs(include_inactive: bool = False) -> List[dict]:
     packs = data.get("cardPacks", [])
     for p in packs:
         p["price_usd"]       = int(p.get("priceInUsdt", 0) or 0) / 1e18
-        # expectedValueInUsd / featuredCardFmvInUsd 欄名雖寫 "InUsd"，實測為「美分」
-        # （全 15 台 EV/100 = 售價的 1.03–1.08 倍；不除 100 會變 100 倍離譜值）。
+        # Although expectedValueInUsd / featuredCardFmvInUsd are named "InUsd",
+        # they are actually in cents (across all 15 packs, EV/100 = 1.03-1.08x
+        # the price; not dividing by 100 yields absurd 100x values).
         p["official_ev_usd"] = float(p.get("expectedValueInUsd", 0) or 0) / 100
         p["featured_fmv_usd"]= float(p.get("featuredCardFmvInUsd", 0) or 0) / 100
-        # 從 description 解析供應量（limited pack 描述含 "1,000 real graded cards"）
+        # Parse supply from the description (limited pack descriptions contain "1,000 real graded cards")
         desc = p.get("description", "")
         m = _re.search(r'(\d[\d,]+)\s*(packs?|graded cards?)', desc, _re.I)
         p["supply_hint"] = int(m.group(1).replace(",", "")) if m else None
         p["ev_ratio"] = round(p["official_ev_usd"] / p["price_usd"], 1) if p["price_usd"] else None
 
-    # 官網已顯示、但 API 尚未上線的限量包放這裡當備援（會與原生清單去重）。
-    # world-cup-pack 已於 API 原生上線，故移除；此清單目前為空。
+    # Limited packs shown on the site but not yet live in the API go here as a
+    # fallback (deduplicated against the native list). world-cup-pack is now
+    # live natively in the API, so it was removed; this list is currently empty.
     COMING_SOON: List[dict] = []
     if include_inactive and COMING_SOON:
         have = {(p.get("slug") or p.get("name")) for p in packs}
@@ -129,12 +133,12 @@ def get_packs(include_inactive: bool = False) -> List[dict]:
 
 
 def get_pack_detail(slug: str) -> dict:
-    """單一卡機詳情，含 recentOpenedPacks（最近開包記錄，有 tier + fmv）。"""
+    """Detail for a single pack, including recentOpenedPacks (recent pull records with tier + fmv)."""
     data = _get(RENAISS_BASE, f"/packs/{slug}")
     pack = data.get("cardPack", {})
     if pack:
         pack["price_usd"]        = int(pack.get("priceInUsdt", 0) or 0) / 1e18
-        # 同 get_packs：這兩欄實測為美分，需 / 100 還原成美元。
+        # Same as get_packs: these two fields are actually in cents, divide by 100 to restore USD.
         pack["official_ev_usd"]  = float(pack.get("expectedValueInUsd", 0) or 0) / 100
         pack["featured_fmv_usd"] = float(pack.get("featuredCardFmvInUsd", 0) or 0) / 100
     return pack
@@ -149,8 +153,8 @@ def get_marketplace(
     offset: int = 0,
 ) -> dict:
     """
-    市場掛單列表。回傳 {"collection": [...], "pagination": {...}}.
-    每張卡含 tokenId / name / fmvPriceInUSD / askPriceInUSDT / ownerAddress 等。
+    Marketplace listing list. Returns {"collection": [...], "pagination": {...}}.
+    Each card includes tokenId / name / fmvPriceInUSD / askPriceInUSDT / ownerAddress, etc.
     """
     params: dict = {
         "limit": limit,
@@ -171,17 +175,17 @@ def get_marketplace(
 
 
 def get_card_detail(token_id: str) -> dict:
-    """單張卡片詳情（by tokenId）。"""
+    """Detail for a single card (by tokenId)."""
     data = _get(RENAISS_BASE, f"/cards/{token_id}")
     return data
 
 
 def compute_pack_ev(slug: str) -> dict:
     """
-    對單一卡機計算：
-      official_ev   = 平台公布 expectedValueInUsd
-      empirical_ev  = 最近開包 FMV 的平均值（最近 N 筆）
-      ev_ratio      = official_ev / price（>1 → 值回票價）
+    Compute for a single pack:
+      official_ev   = platform-published expectedValueInUsd
+      empirical_ev  = average FMV of recent pulls (most recent N records)
+      ev_ratio      = official_ev / price (>1 -> worth the price)
       ev_delta_pct  = (empirical_ev - official_ev) / official_ev × 100
     """
     p = get_pack_detail(slug)
@@ -193,8 +197,8 @@ def compute_pack_ev(slug: str) -> dict:
     recent   = p.get("recentOpenedPacks", [])
 
     if recent:
-        # recentOpenedPacks[].fmv 與 expectedValueInUsd 同樣是「美分」，需 /100 還原美元
-        # （不除會讓 empirical_ev / ev_delta_pct 膨脹 100 倍）。
+        # recentOpenedPacks[].fmv, like expectedValueInUsd, is in cents; divide
+        # by 100 to restore USD (otherwise empirical_ev / ev_delta_pct inflate 100x).
         fmvs = [float(r.get("fmv", 0)) / 100 for r in recent if r.get("fmv") is not None]
         empirical = round(sum(fmvs) / len(fmvs), 2) if fmvs else None
     else:
@@ -226,13 +230,13 @@ def compute_pack_ev(slug: str) -> dict:
 
 
 def get_all_packs_ev() -> List[dict]:
-    """所有卡機的 EV 分析（list，供 dashboard 直接用）。"""
+    """EV analysis for all packs (a list, for direct dashboard use)."""
     packs = get_packs()
     results = []
     for p in packs:
         slug = p.get("slug", "")
         ev = compute_pack_ev(slug)
-        # 補齊舊 dashboard 需要的欄位
+        # Fill in the fields the old dashboard needs
         ev["pack_name"]               = p.get("name", slug)
         ev["price"]                   = p.get("price_usd", 0)
         ev["optimized_ev"]            = ev.get("official_ev_usd")
@@ -248,7 +252,7 @@ def get_all_packs_ev() -> List[dict]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def search_cards(q: str, limit: int = 10) -> List[dict]:
-    """全文搜尋卡片名稱，回傳含 priceUsdCents / grade / spark 的 list。"""
+    """Full-text search card names; returns a list including priceUsdCents / grade / spark."""
     data = _get(INDEX_BASE, "/search", {"q": q, "limit": limit})
     results = data.get("results", [])
     for r in results:
@@ -257,7 +261,7 @@ def search_cards(q: str, limit: int = 10) -> List[dict]:
 
 
 def get_card_by_renaiss_id(rid: str) -> dict:
-    """用 Renaiss tokenId 查 Index API，回傳 card detail + priceUsdCents。"""
+    """Query the Index API by Renaiss tokenId; returns card detail + priceUsdCents."""
     data = _get(INDEX_BASE, f"/cards/by-renaiss-id/{rid}")
     if data.get("priceUsdCents"):
         data["price_usd"] = data["priceUsdCents"] / 100
@@ -265,13 +269,13 @@ def get_card_by_renaiss_id(rid: str) -> dict:
 
 
 def get_card_fmv_series(rid: str) -> List[dict]:
-    """查某張卡的每日 FMV 歷史（Index API by-renaiss-id）。"""
+    """Query a card's daily FMV history (Index API by-renaiss-id)."""
     data = _get(INDEX_BASE, f"/cards/by-renaiss-id/{rid}/fmv-series")
     return data.get("series", data if isinstance(data, list) else [])
 
 
 def get_graded(cert: str) -> dict:
-    """用分級序號（如 PSA138947522）查 Index API，回傳 grade + card + price。"""
+    """Query the Index API by grading serial (e.g. PSA138947522); returns grade + card + price."""
     data = _get(INDEX_BASE, f"/graded/{cert}")
     card = data.get("card", {})
     if card.get("priceUsdCents"):
@@ -280,7 +284,7 @@ def get_graded(cert: str) -> dict:
 
 
 def get_recent_trades(limit: int = 50) -> List[dict]:
-    """最近跨平台成交紀錄（snkrdunk / 其他來源）。"""
+    """Recent cross-platform trade records (snkrdunk / other sources)."""
     data = _get(INDEX_BASE, "/trades/recent", {"limit": limit})
     trades = data.get("trades", [])
     for t in trades:
@@ -289,14 +293,14 @@ def get_recent_trades(limit: int = 50) -> List[dict]:
 
 
 def get_index_overview(game: str = "pokemon") -> dict:
-    """Index 指數總覽（game = pokemon / one-piece）。"""
+    """Index overview (game = pokemon / one-piece)."""
     return _get(INDEX_BASE, f"/indices/{game}")
 
 
-# ─── 快取工具 ─────────────────────────────────────────────────────────────────
+# ─── Cache utilities ──────────────────────────────────────────────────────────
 
 def clear_cache():
-    """手動清快取。"""
+    """Manually clear the cache."""
     _cache.clear()
 
 
@@ -308,7 +312,7 @@ def cache_stats() -> dict:
     }
 
 
-# ─── 快速測試 ─────────────────────────────────────────────────────────────────
+# ─── Quick test ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import pprint
     print("=== Packs ===")

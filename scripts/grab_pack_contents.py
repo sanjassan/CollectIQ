@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
 """
-grab_pack_contents.py — 抓「卡機內容目錄」（開抽前就能拿到的全池清單）。
+grab_pack_contents.py — grab the "card machine content catalog" (the full pool
+list, available even before pulls open).
 
-背景：
-  Renaiss 官網 /gacha/{slug} 頁面用 tRPC `cardPack.getContent`（packId + tiers）
-  把整台卡機「宣稱裝了哪些卡」一次吐出來——連 countdown（尚未開抽、還沒上鏈）
-  的限量卡機也有。每張卡含：名稱 / 圖片 / 分級 / 年份 / Renaiss 買回基準價，
-  且圖片 URL 內嵌鑑定證號（PSA/BGS cert）——這就是對真實市場價的萬用鍵。
+Background:
+  The Renaiss /gacha/{slug} page uses the tRPC `cardPack.getContent` endpoint
+  (packId + tiers) to dump everything a card machine "claims to contain" in one
+  shot — even countdown machines (limited packs not yet open, not yet on-chain).
+  Each card carries: name / image / tier / year / Renaiss buyback base price,
+  and the image URL embeds the grading cert (PSA/BGS) — the universal key to
+  real market prices.
 
-因此本檔可在「公告前、上鏈前」就把整池卡表落地，之後：
-  1) 用 cert 對 Index API / 外部來源補真實市價 → 幸運值（藏寶卡）排序；
-  2) 開抽上鏈後由 watch_new_pool 抓到卡池位址，再把 item_id ↔ token_id 串起來。
+So this file can land the full pool table "before any announcement, before it
+hits the chain," and then:
+  1) use the cert against the Index API / external sources to fill in real
+     market prices -> rank by luck value (treasure cards);
+  2) after pulls open on-chain, watch_new_pool grabs the pool address and links
+     item_id <-> token_id.
 
-用法：
-  python3 grab_pack_contents.py            # 抓全部卡機
-  python3 grab_pack_contents.py <packId>   # 只抓單一卡機
-  python3 grab_pack_contents.py --gems     # 印出目前藏寶卡排行（需已補市價）
+Usage:
+  python3 grab_pack_contents.py            # grab every card machine
+  python3 grab_pack_contents.py <packId>   # grab a single card machine only
+  python3 grab_pack_contents.py --gems     # print the current treasure-card ranking (needs prices filled in)
 """
 from __future__ import annotations
 
@@ -32,11 +38,12 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-sys.path.insert(0, str(ROOT))          # renaiss_api.py 在專案根目錄
+sys.path.insert(0, str(ROOT))          # renaiss_api.py lives at the project root
 import ledger  # noqa: E402
 
 TRPC = "https://www.renaiss.xyz/api/trpc"
-# 擬真瀏覽器標頭，降低被 WAF/風控擋下的機率（僅送正常瀏覽會送的欄位）。
+# Browser-like headers to reduce the chance of being blocked by the WAF / risk
+# controls (only sends fields a normal browser would send).
 HEADERS = {
     "accept": "*/*",
     "accept-language": "en-US,en;q=0.9",
@@ -48,11 +55,12 @@ HEADERS = {
     "sec-fetch-dest": "empty", "sec-fetch-mode": "cors", "sec-fetch-site": "same-origin",
 }
 TIERS = ["TOP", "S", "A", "B", "C", "D"]
-# 圖片 URL 形如 .../pokemon-cards/PSA136046059/card.jpg → 取資料夾名當證號
+# Image URLs look like .../pokemon-cards/PSA136046059/card.jpg -> take the folder name as the cert
 CERT_RE = re.compile(r"/([A-Za-z]{2,5}\d{4,})/[^/]+\.(?:jpg|jpeg|png|webp)", re.I)
 
-# 全域禮貌節流：所有對外請求共用同一個 Session，並在請求間插入抖動延遲，
-# 避免對站方造成突發流量而被限流 / 封鎖。
+# Global polite throttling: all outbound requests share a single Session and add
+# a jittered delay between requests, to avoid bursty traffic that could get us
+# rate-limited / blocked by the site.
 _SESSION = requests.Session()
 _SESSION.headers.update(HEADERS)
 
@@ -62,7 +70,7 @@ def _polite_sleep(base: float = 0.8, jitter: float = 0.6) -> None:
 
 
 def _get(proc: str, payload: dict, retries: int = 5) -> dict:
-    """打 Renaiss tRPC，遇 429/5xx 以指數退避 + 抖動重試，尊重 Retry-After。"""
+    """Call Renaiss tRPC; on 429/5xx retry with exponential backoff + jitter, honoring Retry-After."""
     inp = urllib.parse.quote(json.dumps({"0": {"json": payload}}))
     url = f"{TRPC}/{proc}?batch=1&input={inp}"
     last = None
@@ -82,7 +90,7 @@ def _get(proc: str, payload: dict, retries: int = 5) -> dict:
 
 
 def list_packs() -> list[dict]:
-    """所有卡機（含封存），回傳 id / name / packType / stage。"""
+    """All card machines (including archived); returns id / name / packType / stage."""
     data = _get("cardPack.getAll", {"includeInactive": True})
     return data.get("cardPacks", [])
 
@@ -95,7 +103,7 @@ def _cert_from_url(url: str) -> str | None:
 
 
 def grab_pack(core, pack: dict) -> dict:
-    """抓單一卡機的全池卡表，寫入 pack_content（不覆蓋已補的市價/token_id）。"""
+    """Grab a single card machine's full pool table into pack_content (without overwriting filled-in prices/token_id)."""
     pid = pack.get("id")
     if not pid:
         return {"cards": 0, "skipped": "no id"}
@@ -114,14 +122,15 @@ def grab_pack(core, pack: dict) -> dict:
         cards = (blob or {}).get("cards", []) or []
         tier_counts[tier] = len(cards)
         for c in cards:
-            entry_id = c.get("id")          # 抽卡槽唯一鍵
+            entry_id = c.get("id")          # unique key for the pull slot
             if not entry_id:
                 continue
-            item_id = c.get("itemId")        # 實體卡（可跨槽重複）
+            item_id = c.get("itemId")        # physical card (can repeat across slots)
             cert = _cert_from_url(c.get("frontImageUrl"))
             try:
-                # buybackBaseValueInUSD 欄名雖寫 USD，實測為「美分」（且常是字串）。
-                # 除以 100 還原成美元，與市價（get_graded 已是美元）同單位，luck 才正確。
+                # Despite the name, buybackBaseValueInUSD is actually in cents (and often a string).
+                # Divide by 100 to get dollars, matching the market price (get_graded is already in
+                # dollars) so luck comes out correct.
                 buyback = float(c.get("buybackBaseValueInUSD") or 0) / 100 or None
             except (TypeError, ValueError):
                 buyback = None
@@ -131,7 +140,7 @@ def grab_pack(core, pack: dict) -> dict:
                 c.get("frontImageUrl"), buyback, now, now,
             ))
 
-    # UPSERT：目錄欄位刷新，但保留已補的 market_price_usd / luck_value / token_id
+    # UPSERT: refresh catalog fields but preserve filled-in market_price_usd / luck_value / token_id
     core.executemany("""
         INSERT INTO pack_content
           (pack_id,entry_id,item_id,pack_name,pack_stage,tier,name,cert,grader,
@@ -175,13 +184,13 @@ def grab_all(core, only: str | None = None) -> dict:
 
 
 def enrich_market(core, limit: int = 90, pack_id: str | None = None) -> dict:
-    """用鑑定證號對 Index API 補真實市價，回填 market_price_usd / luck_value。
+    """Use the grading cert against the Index API to fill in real market prices, writing back market_price_usd / luck_value.
 
-    Index API 匿名每日 100 筆，故：
-      - 依 DISTINCT cert 去重（同一張實體卡多槽只查一次）；
-      - 優先序：countdown 卡機 > 高階(TOP>S>A>B>C) > 官方買回高者；
-      - 連續 429 即停（配額用盡），已補的照樣落地。
-    一次補會更新「所有同 cert 槽位」，故加權 EV 也一起受惠。
+    The Index API allows 100 anonymous requests per day, so:
+      - dedupe by DISTINCT cert (query the same physical card once even across many slots);
+      - priority order: countdown machines > higher tiers (TOP>S>A>B>C) > higher official buyback;
+      - stop on consecutive 429s (quota exhausted); whatever was filled still lands.
+    One fill updates "all slots with the same cert," so the weighted EV benefits too.
     """
     import renaiss_api as api
     now = datetime.now(timezone.utc).isoformat()
@@ -211,7 +220,7 @@ def enrich_market(core, limit: int = 90, pack_id: str | None = None) -> dict:
         except Exception:
             price = None
         if price is None:
-            # 分辨配額用盡 vs 查無此卡：粗略以連續失敗判定
+            # Distinguish quota exhausted vs. card not found: roughly judged by consecutive failures
             miss += 1
             consecutive_fail += 1
             if consecutive_fail >= 8:
@@ -220,10 +229,13 @@ def enrich_market(core, limit: int = 90, pack_id: str | None = None) -> dict:
             _polite_sleep(0.5, 0.5)
             continue
         consecutive_fail = 0
-        # luck_value 必須逐槽算：同一 cert 在不同 tier/卡機的官方買回價不同，
-        # 用單一 cert 級比值覆蓋整批會污染（B 檔 $121 被 C 檔 $80 的比值蓋掉）。
-        # 市價是每張實體卡共通、逐槽相同，故 market_price_usd 用 cert 級寫入無妨。
-        # 誠實標註來源：renaissos Index 是 Renaiss 自家定價，非獨立第三方成交價。
+        # luck_value must be computed per-slot: the same cert has different official
+        # buyback prices across tiers/machines, so overwriting the whole batch with a
+        # single cert-level ratio would pollute it (a C-slot $80 ratio clobbering a
+        # B-slot $121). The market price is shared across every physical card and the
+        # same per slot, so writing market_price_usd at the cert level is fine.
+        # Label the source honestly: the Renaiss Index is Renaiss's own pricing, not an
+        # independent third-party sale price.
         core.execute("""
             UPDATE pack_content
             SET market_price_usd=?,
@@ -232,7 +244,7 @@ def enrich_market(core, limit: int = 90, pack_id: str | None = None) -> dict:
                 market_source='renaiss_index', market_url=NULL, updated_at=?
             WHERE cert=?""", (price, price, now, cert))
         ok += 1
-        _polite_sleep(0.5, 0.5)   # 對 Index API 也放慢，避免觸發風控
+        _polite_sleep(0.5, 0.5)   # slow down for the Index API too, to avoid tripping risk controls
     core.commit()
     return {"enriched": ok, "missed": miss, "quota_hit": bool(quota),
             "candidates": len(rows)}
@@ -240,16 +252,19 @@ def enrich_market(core, limit: int = 90, pack_id: str | None = None) -> dict:
 
 def enrich_independent(core, limit: int = 200, pack_id: str | None = None,
                        only_missing: bool = True) -> dict:
-    """用『獨立第三方成交價』補市價 —— PriceCharting（彙整 eBay 已成交拍賣，
-    依鑑定等級分欄）。這才是使用者要的『公信力 + 一般買家拍賣價』來源，
-    與 Renaiss 自家 Index（renaiss_index）不同，可回答『幸運值是不是假的』。
+    """Fill in market prices from an "independent third-party sale price" -- PriceCharting
+    (aggregating completed eBay auctions, split by grading level). This is the
+    "credible + ordinary-buyer auction price" source the user actually wants, distinct
+    from Renaiss's own Index (renaiss_index), and it answers "is the luck value fake?"
 
-    市價來源優先序：pricecharting_ebay（獨立）> renaiss_index（Renaiss 自家）。
-    故預設 only_missing=True 只補「還沒有任何市價」的卡；獨立來源永遠可覆蓋
-    非獨立來源，但這裡保守不主動覆蓋，交由呼叫端決定。
+    Market-source priority: pricecharting_ebay (independent) > renaiss_index (Renaiss's own).
+    So by default only_missing=True fills only cards that "have no market price yet"; an
+    independent source can always override a non-independent one, but here we're conservative
+    and don't auto-override, leaving that decision to the caller.
 
-    PriceCharting 是公開站台、無 Index API 的每日 100 筆硬上限，但仍禮貌節流。
-    比對不到（促銷卡 / 冷門日板）就留 None，絕不捏造。
+    PriceCharting is a public site with no per-day hard cap like the Index API's 100, but we
+    still throttle politely. When there's no match (promo cards / obscure Japanese sets) we
+    leave it None and never fabricate.
     """
     import our_price
     now = datetime.now(timezone.utc).isoformat()
@@ -291,14 +306,17 @@ def enrich_independent(core, limit: int = 200, pack_id: str | None = None,
             if res.get("title_mismatch"):
                 mismatch += 1
         else:
-            # 非 PSA 鑑定商：把 PriceCharting 的 PSA 基準價換算成該商等價市場價
-            # （例 BGS 10 ≈ PSA 10 × 0.75）。換算不出係數就沿用原價。
+            # Non-PSA grader: convert PriceCharting's PSA base price into that grader's
+            # equivalent market price (e.g. BGS 10 ~= PSA 10 x 0.75). If no factor is
+            # available, keep the original price.
             if (grader or "PSA").upper() != "PSA" and res.get("grade_matched") == "PSA 10":
                 price = our_price.grader_convert(
                     price, "psa", 10.0, to_grader=(grader or "").lower()) or price
             price = round(float(price), 2)
-            # luck_value 逐槽算（見 enrich_market 同段說明）：同 cert 不同 tier 的
-            # 官方買回價不同，不可用單一比值覆蓋整批；市價逐槽共通故 cert 級寫入。
+            # luck_value computed per-slot (see the same note in enrich_market): the same
+            # cert has different official buyback prices across tiers, so a single ratio
+            # can't overwrite the whole batch; the market price is shared per-slot, hence
+            # a cert-level write.
             core.execute("""
                 UPDATE pack_content
                 SET market_price_usd=?,
@@ -307,7 +325,7 @@ def enrich_independent(core, limit: int = 200, pack_id: str | None = None,
                     market_source='pricecharting_ebay', market_url=?, updated_at=?
                 WHERE cert=?""", (price, price, res.get("source_url"), now, cert))
             ok += 1
-        # 每 15 張落地一次：進度可見、可續跑、被中斷也不整批丟失。
+        # Land every 15 cards: progress is visible, the run is resumable, and an interruption doesn't lose the whole batch.
         if idx % 15 == 0:
             core.commit()
             try:
@@ -326,7 +344,7 @@ def enrich_independent(core, limit: int = 200, pack_id: str | None = None,
 
 
 def show_gems(core, limit: int = 30) -> None:
-    """目前已知市價下的藏寶卡排行（幸運值 = 市價 / 官方買回）。"""
+    """Treasure-card ranking under currently known market prices (luck value = market price / official buyback)."""
     rows = core.execute("""
         SELECT pack_name, tier, name, cert, renaiss_buyback_usd,
                market_price_usd, luck_value
@@ -359,8 +377,8 @@ def main() -> int:
         show_gems(core)
         return 0
     if args and args[0] == "--independent":
-        # 用獨立第三方成交價（PriceCharting/eBay）補市價。
-        # 可選 limit 與 pack_id：--independent 200 <packId>
+        # Fill in market prices from independent third-party sale prices (PriceCharting/eBay).
+        # Optional limit and pack_id: --independent 200 <packId>
         limit = int(args[1]) if len(args) > 1 else 200
         pid = args[2] if len(args) > 2 else None
         st = enrich_independent(core, limit, pid)
@@ -369,9 +387,11 @@ def main() -> int:
         show_gems(core)
         return 0
     if args and args[0] == "--daily":
-        # 排程入口：先刷全卡機目錄（Renaiss tRPC，無每日上限），
-        # 再優先用『獨立成交價』(PriceCharting/eBay，公開站台、無每日硬限) 補市價，
-        # 最後用當日剩餘 Index 配額（renaiss_index，保守 90）補獨立來源查不到的缺口。
+        # Scheduled entry point: first refresh the full machine catalog (Renaiss tRPC,
+        # no daily cap), then fill market prices preferring "independent sale prices"
+        # (PriceCharting/eBay, a public site with no daily hard limit), and finally use
+        # the day's remaining Index quota (renaiss_index, conservatively 90) to fill the
+        # gaps the independent source couldn't find.
         limit = int(args[1]) if len(args) > 1 else 90
         indep_limit = int(args[2]) if len(args) > 2 else 250
         t0 = time.time()
@@ -396,7 +416,7 @@ def main() -> int:
     st = grab_all(core, only)
     print(f"[grab] {datetime.now(timezone.utc):%F %T}Z 卡機 {st['packs']} 台 · "
           f"卡表 {st['cards']} 張入庫 ({time.time()-t0:.1f}s)")
-    # 目錄統計
+    # Catalog stats
     n, ncert, nmkt = core.execute(
         "SELECT COUNT(*), COUNT(cert), COUNT(market_price_usd) FROM pack_content"
     ).fetchone()

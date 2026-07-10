@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 """
-卡機（gacha pool）鏈上地址探測 —— 找出每個卡機的合約地址，並偵測「新卡機」。
+On-chain address discovery for gacha pools — locate each pool's contract address and detect new pools.
 
-背景（使用者觀察，已驗證）：
-  Renaiss 會先把卡 mint 上鏈、灌進一個 gacha 合約（卡機），再開放抽卡；
-  所以新卡機的合約地址通常在官方 Twitter/Discord 預告「之前」就已在鏈上出現。
-  盯著共用 NFT 合約 0xF864…5b30 的 Transfer，就能在公告前抓到新卡機。
+Background (user observation, verified):
+  Renaiss first mints cards on-chain and loads them into a gacha contract (pool),
+  then opens pulls; so a new pool's contract address usually appears on-chain
+  *before* the official Twitter/Discord announcement.
+  Watching Transfers on the shared NFT contract 0xF864…5b30 lets us catch new pools pre-announcement.
 
-已知卡機地址（track_pulls_onchain.py 內建）：
+Known pool addresses (built into track_pulls_onchain.py):
   omega      0x94E7732B0B2E7c51FFD0D56580067d9c2e2B7910
   eden       0xfdA4a907D23d9f24271Bc47483C5B983831E325E
   renacrypt  0xb2891022648c5Fad3721C42C05d8d283D4d53080
-  legacy/costume(舊) 0xAAb5F5FA75437a6e9E7004c12C9c56CdA4b4885A
+  legacy/costume(old) 0xAAb5F5FA75437a6e9E7004c12C9c56CdA4b4885A
 
-探測法（讀 data/onchain_pulls.db，由 track_pulls_onchain.py 持續累積）：
-  卡機合約的特徵 = 把大量「不同 token」發給「大量不同買家」，且自己幾乎只發不收
-  （或從 0x0 收到剛 mint 的卡 = 卡機被灌卡）。據此給 candidate 評分，
-  把不在已知名單、分數高的地址標為「疑似新卡機」。
+Discovery method (reads data/onchain_pulls.db, continuously accumulated by track_pulls_onchain.py):
+  A pool contract's signature = sends many distinct tokens to many distinct buyers, while
+  almost only sending and never receiving (or receiving freshly minted cards from 0x0 = pool being loaded).
+  Candidates are scored accordingly, and high-scoring addresses not in the known list are
+  flagged as "suspected new pools".
 
-輸出 data/pool_addresses.json（known + candidates）。出現新候選時印出 + 可推播。
+Outputs data/pool_addresses.json (known + candidates). Prints new candidates and can push notifications.
 """
 from __future__ import annotations
 
@@ -48,7 +50,7 @@ def discover() -> dict:
         return {"error": "onchain_pulls.db 不存在（先跑 track_pulls_onchain.py）"}
     db = sqlite3.connect(DB)
 
-    # 每個 from_addr 的分發輪廓
+    # Distribution profile per from_addr
     rows = db.execute("""
         SELECT from_addr,
                COUNT(DISTINCT to_addr)   AS distinct_to,
@@ -58,7 +60,7 @@ def discover() -> dict:
         GROUP BY from_addr
     """).fetchall()
 
-    # 從 0x0 收到 mint 的地址（卡機被灌卡的最早訊號）
+    # Addresses that received mints from 0x0 (earliest signal of a pool being loaded)
     mint_recv = dict(db.execute(
         "SELECT to_addr, COUNT(*) FROM onchain_pulls WHERE from_addr=? GROUP BY to_addr",
         (ZERO,),
@@ -84,7 +86,7 @@ def discover() -> dict:
             entry["slug"] = KNOWN[lname]
             knowns.append(entry)
             continue
-        # 卡機評分：發給很多不同買家、很多不同 token，自己很少收（純分發）或被灌過 mint。
+        # Pool scoring: sends to many distinct buyers and many distinct tokens, receives little itself (pure distribution), or has been loaded with mints.
         pool_like = (dto >= 80 and dtok >= 80 and recv < max(dto * 0.3, 10)) or loaded >= 20
         if pool_like:
             entry["confidence"] = round(min(1.0, dto / 300 + loaded / 50), 2)

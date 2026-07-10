@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-rewards.py — 整合項目方獎勵機制到 reward_status（MART 層）。
+rewards.py — integrate project reward mechanics into reward_status (MART layer).
 
-三種：
-  eevee_full   伊布全款：每個持有者集齊 9 種伊布進化的完成度與缺哪幾隻。
-  serial_run   連號：同一持有者、同一角色、序號連續（>=2）的組合。
-               註：目前 serial 來源是鑑定證號（PSA/BGS cert），故此為「連續證號」
-               啟發式；待項目方提供印刷序號後可直接沿用同邏輯精修。
-  sbt          SBT 靈魂綁定獎勵：彙總 sbt_awards（授予事件）到各錢包。
-               sbt_awards 由監控 SBT 合約的 from=0x0 Transfer 填入（尚待接上合約位址）。
+Three types:
+  eevee_full   Eeveelution full set: each holder's completion of all 9 Eevee evolutions and which are missing.
+  serial_run   Serial run: combinations of same holder, same character, consecutive serial numbers (>=2).
+               Note: the serial source is currently the grading cert number (PSA/BGS cert), so this is a
+               "consecutive cert number" heuristic; once the project provides print serials, the same logic
+               can be reused and refined directly.
+  sbt          SBT (soulbound) reward: aggregate sbt_awards (grant events) per wallet.
+               sbt_awards is populated by monitoring from=0x0 Transfers on the SBT contract (contract address not yet wired up).
 
-用法：python3 rewards.py
+Usage: python3 rewards.py
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import ledger  # noqa: E402
 
-# 角色家族定義：family → 成員基礎名（大小寫不敏感的子字串比對）
+# Character family definitions: family → member base names (case-insensitive substring match)
 FAMILIES = {
     "eeveelution": ["Eevee", "Vaporeon", "Jolteon", "Flareon", "Espeon",
                     "Umbreon", "Leafeon", "Glaceon", "Sylveon"],
@@ -40,7 +41,7 @@ def _match_member(character_name: str, members: list[str]) -> str | None:
 
 
 def classify_families(core) -> dict:
-    """回填 dim_card.character_family（目前：eeveelution）。"""
+    """Backfill dim_card.character_family (currently: eeveelution)."""
     updated = 0
     for family, members in FAMILIES.items():
         rows = core.execute(
@@ -56,9 +57,9 @@ def classify_families(core) -> dict:
 
 
 def compute_eevee_full(core) -> dict:
-    """每個持有者的伊布全款完成度。"""
+    """Each holder's Eeveelution full-set completion."""
     now = datetime.now(timezone.utc).isoformat()
-    # 持有者 -> 擁有的伊布成員集合（held 狀態）
+    # holder -> set of owned Eevee members (held status)
     rows = core.execute("""
         SELECT fh.current_holder, d.character_name
         FROM fact_holding fh
@@ -91,7 +92,7 @@ def compute_eevee_full(core) -> dict:
 
 
 def compute_serial_runs(core) -> dict:
-    """同持有者、同角色、序號連續（>=2）的連號組合。"""
+    """Serial-run combinations: same holder, same character, consecutive serial numbers (>=2)."""
     now = datetime.now(timezone.utc).isoformat()
     rows = core.execute("""
         SELECT fh.current_holder, d.character_name, d.serial_num, d.token_id
@@ -102,7 +103,7 @@ def compute_serial_runs(core) -> dict:
         ORDER BY fh.current_holder, d.character_name, d.serial_num
     """).fetchall()
 
-    # 分組後找連續段
+    # Group, then find consecutive runs
     from itertools import groupby
     payload = []
     for (holder, cname), grp in groupby(rows, key=lambda r: (r[0], r[1])):
@@ -132,7 +133,7 @@ def compute_serial_runs(core) -> dict:
 
 
 def compute_sbt(core) -> dict:
-    """彙總 sbt_awards 到各錢包的 reward_status。"""
+    """Aggregate sbt_awards into per-wallet reward_status."""
     now = datetime.now(timezone.utc).isoformat()
     rows = core.execute(
         "SELECT wallet, COUNT(*), GROUP_CONCAT(reason) FROM sbt_awards "
@@ -162,7 +163,7 @@ def main() -> int:
     print(f"[rewards] 連號：偵測到 {sr['runs']} 組連續序號")
     print(f"[rewards] SBT：{sb['wallets']} 個錢包有 SBT 獎勵（sbt_awards 尚待接上合約）")
 
-    # 展示：最接近伊布全款的前幾名
+    # Display: the closest to a full Eeveelution set
     top = core.execute(
         "SELECT holder, detail FROM reward_status WHERE reward_type='eevee_full' "
         "ORDER BY json_extract(detail,'$.count') DESC LIMIT 5").fetchall()

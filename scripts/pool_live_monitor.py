@@ -1,33 +1,37 @@
 #!/usr/bin/env python3
 """
-pool_live_monitor.py — 限量卡機「開放中」即時獎池追蹤器
+pool_live_monitor.py — real-time prize-pool tracker for limited card machines that are "open"
 
-專為「週五限量卡機開放窗口」設計：對單一卡池合約做高頻聚焦掃描，回答：
-  · 這池灌了幾張卡（loaded）
-  · 每一張卡的即時狀態：仍在池內 / 已被抽走(pulled) / 被抽走後又回收回池(recycled) / 已銷毀(burned)
-  · 每張被抽走的卡是「哪個錢包」抽走的、什麼時間、哪筆 tx
-  · 有沒有「新錢包 / 新智能合約」首次出現（開池前的鏈上前兆）
+Built specifically for the "Friday limited-machine opening window": a high-frequency
+focused scan of a single pool contract, answering:
+  - how many cards were loaded into this pool
+  - each card's live status: still in the pool / pulled / recycled back into the pool
+    after being pulled / burned
+  - for each pulled card, which wallet pulled it, when, and in which tx
+  - whether any "new wallet / new smart contract" appears for the first time (an
+    on-chain precursor before the pool opens)
 
-與 track_pulls_onchain.py 的差異：
-  track_pulls 掃「整張共用 NFT 合約」的所有 Transfer（全站，量大、慢）。
-  本監看器用 topic filter 只抓「與目標池相關」的 Transfer（from=池 或 to=池），
-  資料量小很多 → 免費節點也能高頻（每 30~60 秒）更新，適合開放窗口的爆量抽卡。
+Difference from track_pulls_onchain.py:
+  track_pulls scans every Transfer on the "shared NFT contract" (site-wide, huge, slow).
+  This monitor uses a topic filter to grab only Transfers "related to the target pool"
+  (from=pool or to=pool), which is far less data -> even a free node can update at high
+  frequency (every 30-60s), suitable for the pull surge during an opening window.
 
-資料寫入 data/live_pool.db：
+Data is written to data/live_pool.db:
   pool_meta(address, slug, name, active_from, loaded, pulled, recycled, remaining, burned,
             distinct_buyers, last_block, updated_at)
   tokens(token_id, status, holder, card_name, fmv, tier, is_big, last_block, last_time)
   events(block, log_index, time, token_id, kind, from_addr, to_addr, tx, card_name, fmv)
   wallets(address, first_seen_block, first_seen_time, pulls, is_contract)
 
-目標池決定順序：
-  1) POOL_ADDR 環境變數 / 命令列參數（明確指定）
-  2) tRPC 找到「開放窗口內」的 limited 卡機 → 鏈上探測其池位址
-  3) 預設 omega（有歷史資料，供介面現在就有東西可顯示 / 測試）
+Target-pool selection order:
+  1) POOL_ADDR env var / command-line argument (explicitly specified)
+  2) tRPC finds a limited machine "within the opening window" -> probe its pool address on-chain
+  3) default omega (has historical data, so the UI has something to show / test right now)
 
-用法：
-  python3 pool_live_monitor.py                 # 自動選池
-  python3 pool_live_monitor.py 0x94e7...       # 指定池位址
+Usage:
+  python3 pool_live_monitor.py                 # auto-select pool
+  python3 pool_live_monitor.py 0x94e7...       # specify pool address
   POOL_ADDR=0x.. python3 pool_live_monitor.py
 """
 from __future__ import annotations
@@ -44,11 +48,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from track_pulls_onchain import (  # 重用穩定的多節點 RPC + 常數
+from track_pulls_onchain import (  # reuse the stable multi-node RPC + constants
     RpcPool, NFT, TRANSFER_TOPIC, ZERO, _addr, _load_market,
 )
 
-try:  # 統一核心帳本（RAW 全記錄、reorg 安全）；缺席不影響 live_pool 運作
+try:  # unified core ledger (RAW full record, reorg-safe); its absence doesn't affect live_pool
     import ledger as _ledger
     _CORE = _ledger.init_db()
 except Exception as _e:  # pragma: no cover
@@ -77,13 +81,13 @@ KNOWN_POOLS = {
     "0xb2891022648c5fad3721c42c05d8d283d4d53080": "renacrypt-pack",
     "0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a": "legacy/costume",
 }
-# 中央鑄造/路由合約與轉發中繼——這些不是「買家」，抽卡分佈統計要排除
+# Central mint/router contracts and forwarding relays -- these are not "buyers"; exclude them from the pull-distribution stats
 INFRA_ADDRS = {
-    "0xb95f8867ff54fd16342cb414c0f57237be7dc512",  # 中央鑄造/路由合約
-    "0x341edb3edc1e45612e5704f29ec8d26fbb4072b4",  # 鑄造中繼
+    "0xb95f8867ff54fd16342cb414c0f57237be7dc512",  # central mint/router contract
+    "0x341edb3edc1e45612e5704f29ec8d26fbb4072b4",  # mint relay
     ZERO,
 }
-BIG_FMV = 300.0  # ≥ 此 FMV 視為大獎
+BIG_FMV = 300.0  # FMV >= this is treated as a big prize
 
 
 # ─── DB ──────────────────────────────────────────────────────────────────────
@@ -120,7 +124,7 @@ def _conn() -> sqlite3.Connection:
     return conn
 
 
-# ─── 目標池決定 ───────────────────────────────────────────────────────────────
+# ─── Target-pool selection ───────────────────────────────────────────────────
 def _pad(addr: str) -> str:
     return "0x" + "0" * 24 + addr.lower().replace("0x", "")
 
@@ -167,8 +171,8 @@ def _write_cache(d: dict):
 
 
 def pick_target_pool(rpcs: RpcPool) -> dict:
-    """回傳 {address, slug, name, active_from}。含探測快取，避免每輪重掃 6000 區塊燒 RPC。"""
-    # 1) 明確指定
+    """Returns {address, slug, name, active_from}. Includes a discovery cache to avoid rescanning 6000 blocks and burning RPC every round."""
+    # 1) explicitly specified
     explicit = (sys.argv[1] if len(sys.argv) > 1 else "") or os.getenv("POOL_ADDR", "")
     explicit = explicit.strip().lower()
     if explicit.startswith("0x") and len(explicit) == 42:
@@ -191,13 +195,13 @@ def pick_target_pool(rpcs: RpcPool) -> dict:
                       f"(還有 {(af-now).total_seconds()/3600:.1f} 小時)")
             continue
 
-        # 2a) 快取命中（已探測到本檔池位址）→ 直接用，不重掃鏈（省 RPC）
+        # 2a) cache hit (this machine's pool address was already discovered) -> use it directly, no rescan (saves RPC)
         cache = _read_cache()
         if cache.get("slug") == slug and cache.get("address"):
             return {"address": cache["address"], "slug": slug, "name": p.get("name"),
                     "active_from": p.get("activeFrom"), "notified": cache.get("notified", False)}
 
-        # 2b) 首次：鏈上探測新池
+        # 2b) first time: probe for the new pool on-chain
         print(f"[target] 開放窗口內：{p.get('name')} → 鏈上探測池…")
         addr = discover_pool(rpcs)
         if addr:
@@ -208,18 +212,18 @@ def pick_target_pool(rpcs: RpcPool) -> dict:
                     "active_from": p.get("activeFrom"), "notified": False}
         print("[target] 尚未偵測到已灌卡的新池（可能還沒灌池）。")
 
-    # 3) 預設 omega（有歷史資料可顯示）
+    # 3) default omega (has historical data to display)
     print("[target] 無開放中限量卡機，回退預設 omega（供介面/測試）。")
     return {"address": "0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910",
             "slug": "omega", "name": "Omega (demo)", "active_from": None}
 
 
 def notify_capture(target: dict, stats: dict, conn):
-    """首次抓到某限量池（loaded>0）時，發 Telegram：地址 + 大獎 + 圖片。"""
+    """When a limited pool is first captured (loaded>0), send Telegram: address + big prizes + image."""
     if not target.get("active_from") or target.get("notified"):
         return
     if (stats.get("loaded") or 0) < 20:
-        return  # 還沒真正灌池
+        return  # not actually loaded yet
     pool = target["address"]
     big = conn.execute(
         "SELECT card_name, fmv, token_id FROM tokens WHERE pool=? AND is_big=1 "
@@ -251,7 +255,7 @@ def notify_capture(target: dict, stats: dict, conn):
 
 
 def discover_pool(rpcs: RpcPool, blocks: int = 6000) -> str | None:
-    """掃最近區塊，找被灌大量 from-zero mint 的全新合約 = 新卡池。"""
+    """Scan recent blocks for a brand-new contract loaded with many from-zero mints = a new card pool."""
     latest = rpcs.block_number()
     start = latest - blocks
     import collections
@@ -286,9 +290,9 @@ def discover_pool(rpcs: RpcPool, blocks: int = 6000) -> str | None:
     return None
 
 
-# ─── 掃描（聚焦目標池） ────────────────────────────────────────────────────────
+# ─── Scanning (focused on the target pool) ───────────────────────────────────
 def _seed_from_onchain_db(conn: sqlite3.Connection, pool: str) -> int:
-    """首次針對某池時，用 onchain_pulls.db 既有紀錄 bootstrap（省去重掃歷史）。回傳最大 block。"""
+    """First time targeting a pool, bootstrap from existing onchain_pulls.db records (avoids rescanning history). Returns the max block."""
     if not ONCHAIN_DB.exists():
         return 0
     src = sqlite3.connect(ONCHAIN_DB)
@@ -306,19 +310,21 @@ def _seed_from_onchain_db(conn: sqlite3.Connection, pool: str) -> int:
 
 
 def _classify(pool: str, frm: str, to: str, prev_status: str | None = None) -> str:
-    # 灌卡進池：從 0x0 鑄造，或由中央鑄造/中繼合約路由進來
+    # Loading into the pool: minted from 0x0, or routed in via the central mint/relay contract
     if to == pool and frm in INFRA_ADDRS:
         return "load"
     if to == pool and frm not in INFRA_ADDRS:
-        # 送回池的卡有兩種語意，靠這張卡「先前是否曾從本池被抽走」區分：
-        #   prev_status=='pulled' → 真回收（被抽走後又送回）
-        #   否則                  → 賣家新上架的存貨（永續池常見）→ 視為 load
-        # 沒有前一狀態就無法判定為回收，保守當 load，避免灌爆 recycle 計數。
+        # A card sent back to the pool has two meanings, distinguished by whether this
+        # card "was previously pulled from this pool":
+        #   prev_status=='pulled' -> a true recycle (pulled, then sent back)
+        #   otherwise             -> new inventory listed by a seller (common in perpetual pools) -> treat as load
+        # Without a prior status we can't call it a recycle, so conservatively treat it
+        # as load to avoid inflating the recycle count.
         return "recycle" if prev_status == "pulled" else "load"
     if frm == pool and to == ZERO:
-        return "burn"          # 從池內銷毀
+        return "burn"          # burned from within the pool
     if frm == pool and to not in (ZERO,):
-        return "pull"          # 被抽走
+        return "pull"          # pulled
     return "other"
 
 
@@ -348,7 +354,7 @@ def _apply_event(conn, pool, bn, li, bt, tid, frm, to, tx, name, fmv, kind=None)
             "INSERT OR REPLACE INTO tokens VALUES (?,?,?,?,?,?,?,?,COALESCE((SELECT recycled FROM tokens WHERE pool=? AND token_id=?),0),?,?)",
             (pool, tid, "pulled", to, name, fmv, None, is_big, pool, tid, bn, bt),
         )
-        # 買家錢包（排除基礎設施）
+        # buyer wallet (excluding infrastructure)
         if to not in INFRA_ADDRS and to not in KNOWN_POOLS:
             conn.execute(
                 "INSERT INTO wallets (pool,address,first_seen_block,first_seen_time,pulls) "
@@ -368,7 +374,7 @@ def _apply_event(conn, pool, bn, li, bt, tid, frm, to, tx, name, fmv, kind=None)
 
 
 def scan_forward(conn, rpcs, pool: str, from_block: int, market: dict) -> int:
-    """用 topic filter 聚焦掃 from=池 與 to=池 的 Transfer。回傳掃到的最新 block。"""
+    """Use a topic filter to focus-scan Transfers with from=pool and to=pool. Returns the latest block scanned."""
     latest = rpcs.block_number()
     if from_block <= 0:
         from_block = latest - 6000
@@ -383,7 +389,7 @@ def scan_forward(conn, rpcs, pool: str, from_block: int, market: dict) -> int:
                 logs = rpcs.get_logs({"address": NFT, "topics": topics,
                                       "fromBlock": cur, "toBlock": end})
             except Exception:
-                # 免費節點窄跨度重試
+                # narrow-span retry for free nodes
                 end = min(cur + 50, latest)
                 try:
                     logs = rpcs.get_logs({"address": NFT, "topics": topics,
@@ -403,9 +409,9 @@ def scan_forward(conn, rpcs, pool: str, from_block: int, market: dict) -> int:
                 mk = market.get(tid) or {}
                 txh = lg["transactionHash"].hex()
                 txh = txh if txh.startswith("0x") else "0x" + txh
-                # 用 token 前一狀態分類一次，供核心帳本與 live 投影共用
+                # Classify once using the token's prior status, shared by the core ledger and the live projection
                 k = _classify(pool, frm, to, _prev_status(conn, pool, tid))
-                # RAW 核心帳本：全記錄每筆 Transfer（含 reorg 未定案旗標）
+                # RAW core ledger: record every Transfer in full (including the reorg-unconfirmed flag)
                 if _CORE is not None:
                     _ledger.ingest_transfer(
                         _CORE, txh, lg["logIndex"], bn, _iso(block_ts[bn]),
@@ -424,7 +430,7 @@ def scan_forward(conn, rpcs, pool: str, from_block: int, market: dict) -> int:
     return latest, new_ev
 
 
-# ─── 聚合 + 寫 meta ──────────────────────────────────────────────────────────
+# ─── Aggregate + write meta ──────────────────────────────────────────────────
 def recompute_meta(conn, target: dict, last_block: int):
     pool = target["address"]
     def one(sql, *a):
@@ -464,7 +470,7 @@ def run_once(conn, rpcs, market, target) -> dict:
 
 
 def _in_open_window(target) -> bool:
-    """開放前 30 分 ~ 開放後 3 天 → 高頻掃描窗口。"""
+    """From 30 minutes before opening to 3 days after -> high-frequency scan window."""
     af = _parse_iso(target.get("active_from"))
     if not af:
         return False
@@ -483,7 +489,7 @@ def main() -> int:
 
     fast = _in_open_window(target) or os.getenv("FAST_LOOP") == "1"
     if fast:
-        # 開放窗口內：內部每 30 秒續掃約 110 秒（配合 launchd 120s → 近乎連續 30s 更新）
+        # Within the opening window: internally keep scanning every 30s for ~110s (paired with launchd 120s -> near-continuous 30s updates)
         print("[monitor] 開放窗口 → 高頻模式（30s×~4 輪）")
         deadline = time.time() + 110
         while True:

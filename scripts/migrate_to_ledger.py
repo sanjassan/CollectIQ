@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-migrate_to_ledger.py — 把現有三個 DB 無損整合進 collectiq_core.db。
+migrate_to_ledger.py — losslessly consolidate the three existing DBs into collectiq_core.db.
 
-冪等：可重複執行，靠自然主鍵 INSERT OR IGNORE 去重。
-分步：每個 backfill_* 函數獨立，方便單獨重跑 / 測試。
+Idempotent: can be re-run repeatedly, deduped via natural primary keys with INSERT OR IGNORE.
+Stepwise: each backfill_* function is independent, making it easy to re-run / test in isolation.
 
-Step 2（本檔目前實作）：backfill_transfers()
-  來源優先序（較豐富者先灌，OR IGNORE 保住分類）：
-    1) live_pool.events   有 pool + 已分類 kind（load/pull/recycle/burn）
-    2) onchain_pulls      全域 NFT Transfer，kind 由零地址推導，pool 留 NULL
+Step 2 (currently implemented in this file): backfill_transfers()
+  Source priority (richer source loaded first; OR IGNORE preserves the classification):
+    1) live_pool.events   has pool + already-classified kind (load/pull/recycle/burn)
+    2) onchain_pulls      global NFT Transfers; kind inferred from the zero address, pool left NULL
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ MARKET_LISTED_JSON = DATA / "marketplace_listed.json"
 
 ZERO = "0x0000000000000000000000000000000000000000"
 
-# 已知基礎設施 / 池地址標籤（小寫）
+# Known infrastructure / pool address labels (lowercase)
 KNOWN_LABELS = {
     "0xb95f8867ff54fd16342cb414c0f57237be7dc512": ("central_minter", 1),
     "0x341edb3edc1e45612e5704f29ec8d26fbb4072b4": ("relay", 1),
@@ -46,18 +46,18 @@ KNOWN_LABELS = {
 
 
 def _serial_num(serial: str | None) -> int | None:
-    """從序號字串解析數字（支援 '#12/100' 與 'BGS0015525430' 等）。"""
+    """Parse a number from a serial string (supports '#12/100', 'BGS0015525430', etc.)."""
     if not serial:
         return None
     for part in serial.replace("#", " ").replace("/", " ").split():
         if part.isdigit():
             return int(part)
-    m = re.search(r"(\d+)$", serial)  # 退而求其次：取末尾連續數字
+    m = re.search(r"(\d+)$", serial)  # fallback: take the trailing run of digits
     return int(m.group(1)) if m else None
 
 
 def _iso(ts) -> str | None:
-    """unix 秒 或 已是字串 → ISO UTC 字串。"""
+    """unix seconds, or an existing string -> ISO UTC string."""
     if ts is None:
         return None
     if isinstance(ts, str):
@@ -69,7 +69,7 @@ def _iso(ts) -> str | None:
 
 
 def _kind_from_addrs(frm: str | None, to: str | None) -> str:
-    """全域 Transfer 缺池脈絡時，只能由零地址粗分類。"""
+    """When a global Transfer lacks pool context, we can only roughly classify by the zero address."""
     f = (frm or "").lower()
     t = (to or "").lower()
     if f == ZERO:
@@ -80,10 +80,10 @@ def _kind_from_addrs(frm: str | None, to: str | None) -> str:
 
 
 def backfill_transfers(core: sqlite3.Connection) -> dict:
-    """回填 ledger_transfers。回傳統計。"""
+    """Backfill ledger_transfers. Returns stats."""
     stats = {"from_live": 0, "from_onchain": 0}
 
-    # --- 1) live_pool.events（有 pool + kind，優先）---
+    # --- 1) live_pool.events (has pool + kind, takes priority) ---
     if LIVE_DB.exists():
         src = sqlite3.connect(str(LIVE_DB))
         rows = src.execute(
@@ -102,7 +102,7 @@ def backfill_transfers(core: sqlite3.Connection) -> dict:
         stats["from_live"] = cur.rowcount if cur.rowcount != -1 else len(payload)
         core.commit()
 
-    # --- 2) onchain_pulls（全域，OR IGNORE 不覆蓋已分類列）---
+    # --- 2) onchain_pulls (global; OR IGNORE does not overwrite already-classified rows) ---
     if ONCHAIN_DB.exists():
         src = sqlite3.connect(str(ONCHAIN_DB))
         rows = src.execute(
@@ -128,11 +128,11 @@ def backfill_transfers(core: sqlite3.Connection) -> dict:
 
 
 def backfill_dims(core: sqlite3.Connection) -> dict:
-    """回填 dim_card / dim_wallet（導出維度，全量 REPLACE 重建，冪等）。"""
+    """Backfill dim_card / dim_wallet (derived dimensions, fully rebuilt via REPLACE, idempotent)."""
     now = datetime.now(timezone.utc).isoformat()
     card: dict[str, dict] = {}
 
-    # --- dim_card：collectiq（豐富靜態屬性）為底 ---
+    # --- dim_card: collectiq (rich static attributes) as the base ---
     if COLLECTIQ_DB.exists():
         src = sqlite3.connect(str(COLLECTIQ_DB))
         for (tid, name, set_name, cnum, cname, serial, grader, grade, img) in src.execute(
@@ -146,7 +146,7 @@ def backfill_dims(core: sqlite3.Connection) -> dict:
             }
         src.close()
 
-    # --- dim_card：live_pool.tokens 補 tier，並加入池內獨有卡 ---
+    # --- dim_card: live_pool.tokens fills in tier and adds pool-only cards ---
     if LIVE_DB.exists():
         src = sqlite3.connect(str(LIVE_DB))
         for (tid, cardname, tier) in src.execute(
@@ -176,7 +176,7 @@ def backfill_dims(core: sqlite3.Connection) -> dict:
         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", payload)
     core.commit()
 
-    # --- dim_wallet：live_pool.wallets + 已知標籤 ---
+    # --- dim_wallet: live_pool.wallets + known labels ---
     wallets: dict[str, dict] = {}
     if LIVE_DB.exists():
         src = sqlite3.connect(str(LIVE_DB))
@@ -204,15 +204,16 @@ def backfill_dims(core: sqlite3.Connection) -> dict:
 
 
 def backfill_holdings(core: sqlite3.Connection) -> dict:
-    """由 ledger_transfers 摺疊導出 fact_holding（每 token 取最新一筆 transfer）。
+    """Derive fact_holding by folding ledger_transfers (latest transfer per token).
 
-    掛牌狀態暫用 collectiq 快照；日後 ledger_market 建好後改由市場事件摺疊。
+    Listing status temporarily uses the collectiq snapshot; once ledger_market is built,
+    switch to folding market events instead.
     """
-    # 池地址集合（供 in_pool 判定）
+    # Set of pool addresses (for in_pool detection)
     pools = {a for (a,) in core.execute(
         "SELECT address FROM dim_wallet WHERE label LIKE 'pool:%'").fetchall()}
 
-    # 每 token 的最新一筆 transfer（block, log_index 排序）
+    # Latest transfer per token (ordered by block, log_index)
     latest = core.execute("""
         WITH ranked AS (
             SELECT token_id, to_addr, pool, block_number, block_time, kind,
@@ -224,7 +225,7 @@ def backfill_holdings(core: sqlite3.Connection) -> dict:
         FROM ranked WHERE rn = 1
     """).fetchall()
 
-    # 掛牌快照（collectiq 現況）
+    # Listing snapshot (current collectiq state)
     listed: dict[str, tuple] = {}
     if COLLECTIQ_DB.exists():
         src = sqlite3.connect(str(COLLECTIQ_DB))
@@ -255,21 +256,21 @@ def backfill_holdings(core: sqlite3.Connection) -> dict:
 
 def record_market_snapshot(core: sqlite3.Connection, items: list[dict],
                            ts: str, source: str = "marketplace") -> dict:
-    """把一份掛牌快照 diff 成市場事件並 append 進 ledger_market（冪等、可重用）。
+    """Diff a listing snapshot into market events and append them to ledger_market (idempotent, reusable).
 
-    規則（對每個 token 的最新已知事件比對）：
-      現在掛牌、之前無/已下架/已售 → list
-      現在掛牌、之前掛牌但價格不同 → relist
-      現在掛牌、價格相同           → no-op
-      之前掛牌、現在不在快照中     → delist
-    未來 sync_renaiss_marketplace 可直接呼叫本函數。
+    Rules (comparing against each token's latest known event):
+      now listed, previously none/delisted/sold -> list
+      now listed, previously listed but at a different price -> relist
+      now listed, same price                    -> no-op
+      previously listed, now absent from snapshot -> delist
+    In the future, sync_renaiss_marketplace can call this function directly.
     """
-    # 每 token 最新市場事件狀態
+    # Latest market-event state per token
     last: dict[str, tuple] = {}
     for (tid, ek, price, t) in core.execute(
             "SELECT token_id, event_kind, price_usd, ts FROM ledger_market "
             "ORDER BY ts").fetchall():
-        last[str(tid)] = (ek, price)  # 後者覆蓋 → 留最新
+        last[str(tid)] = (ek, price)  # later rows overwrite -> keep the latest
 
     holders = {str(t): h for (t, h) in core.execute(
         "SELECT token_id, current_holder FROM fact_holding").fetchall()}
@@ -288,9 +289,9 @@ def record_market_snapshot(core: sqlite3.Connection, items: list[dict],
             events.append((tid, it.get("serial"), ledger.MKT_LIST, price, seller, None, ts, source))
         elif prev[0] in (ledger.MKT_LIST, ledger.MKT_RELIST) and prev[1] != price:
             events.append((tid, it.get("serial"), ledger.MKT_RELIST, price, seller, None, ts, source))
-        # 同價續掛：no-op
+        # same-price re-listing: no-op
 
-    # 之前掛牌、現在消失 → delist
+    # previously listed, now gone -> delist
     for tid, (ek, price) in last.items():
         if ek in (ledger.MKT_LIST, ledger.MKT_RELIST) and tid not in cur_listed:
             events.append((tid, None, ledger.MKT_DELIST, price, holders.get(tid), None, ts, source))
@@ -304,7 +305,7 @@ def record_market_snapshot(core: sqlite3.Connection, items: list[dict],
 
 
 def backfill_market(core: sqlite3.Connection) -> dict:
-    """從當前掛牌快照建立市場事件基線。"""
+    """Build a market-event baseline from the current listing snapshot."""
     if not MARKET_LISTED_JSON.exists():
         return {"events": 0}
     items = json.loads(MARKET_LISTED_JSON.read_text())
@@ -314,7 +315,7 @@ def backfill_market(core: sqlite3.Connection) -> dict:
 
 
 def backfill_fmv_snapshots(core: sqlite3.Connection) -> dict:
-    """種下 FMV 快照基線（renaiss/index/幸運值），append-only。"""
+    """Seed the FMV snapshot baseline (renaiss / index / luck value), append-only."""
     if not COLLECTIQ_DB.exists():
         return {"snaps": 0}
     src = sqlite3.connect(str(COLLECTIQ_DB))

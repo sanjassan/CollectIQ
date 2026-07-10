@@ -1,24 +1,30 @@
 #!/usr/bin/env python3
 """
-新限量卡機「卡池錢包」即時捕捉 + 分析。
+Real-time capture + analysis of the "pool wallet" for a new limited card machine.
 
-背景：Renaiss 新限量卡機（如 Bowtie Pack）會先在官方站 countdown，開抽
-(activeFrom) 前才把卡池合約部署上鏈並灌入卡片。重點：Renaiss API 的
-vendingMachineAddress 永遠是 null（連已封存的限量卡機也是），所以卡池合約
-「只能在鏈上找」——這正是「公告前先上鏈」的可利用點。
+Background: a new Renaiss limited machine (e.g. Bowtie Pack) first shows a countdown
+on the official site; only before pulls open (activeFrom) does it deploy the pool
+contract on-chain and load in the cards. Key point: the Renaiss API's
+vendingMachineAddress is always null (even for archived limited machines), so the pool
+contract "can only be found on-chain" -- and that's exactly the "on-chain before the
+announcement" opportunity we exploit.
 
-新卡池的鏈上特徵：開抽前後，會有一大批 mint（from=0x0）灌進一個全新的合約
-位址（≈整池張數），接著該位址開始 Transfer 給買家（抽卡）。
+On-chain signature of a new pool: around when pulls open, a big batch of mints
+(from=0x0) is loaded into a brand-new contract address (~= the whole pool's card
+count), and then that address starts Transferring to buyers (pulls).
 
-本腳本：
-  1) 打 Renaiss tRPC cardPack.getAll，挑出 packType=limited 且接近/已過
-     activeFrom 的卡機（開抽窗口內才掃鏈，避免空掃）。
-  2) 掃最近區塊找「被灌大量 mint 的全新合約」= 新卡池，記住它的位址。
-  3) 對該卡池做錢包分析：灌卡張數、不同買家數、前幾大鯨魚錢包、已抽 token 數。
-  4) 寫 data/new_pack_bowtie.json 的 pool 區塊 + data/new_packs_watch.json；
-     首次抓到卡池上鏈時發 Telegram。
+This script:
+  1) calls Renaiss tRPC cardPack.getAll and picks machines with packType=limited that
+     are near/past activeFrom (only scans the chain within the pull window, to avoid
+     empty scans).
+  2) scans recent blocks for a "brand-new contract loaded with many mints" = the new
+     pool, and remembers its address.
+  3) runs wallet analysis on that pool: number of cards loaded, distinct buyers, top
+     whale wallets, number of tokens pulled.
+  4) writes the pool block of data/new_pack_bowtie.json + data/new_packs_watch.json;
+     sends Telegram the first time the pool is captured on-chain.
 
-排程（launchd ai.renaiss.newpool 每 15 分）會在開抽前後自動捕捉。
+The schedule (launchd ai.renaiss.newpool, every 15 min) captures this automatically around when pulls open.
 """
 from __future__ import annotations
 
@@ -37,11 +43,11 @@ sys.path.insert(0, str(ROOT))
 DATA = ROOT / "data"
 TRPC = "https://www.renaiss.xyz/api/trpc/cardPack.getAll"
 NFT = "0xF8646A3Ca093e97Bb404c3b25e675C0394DD5b30"
-TRANSFER_TOPIC = None  # 延後算（需 web3）
+TRANSFER_TOPIC = None  # computed later (needs web3)
 ZERO = "0x0000000000000000000000000000000000000000"
 
 
-REST_PACKS = "https://api.renaiss.xyz/v0/packs"  # 備援：tRPC 500 時改打這支 REST
+REST_PACKS = "https://api.renaiss.xyz/v0/packs"  # fallback: hit this REST endpoint when tRPC 500s
 _HDRS = {"accept": "application/json", "user-agent": "Mozilla/5.0"}
 
 
@@ -54,15 +60,15 @@ def _fetch_trpc() -> list[dict]:
 
 
 def _fetch_rest() -> list[dict]:
-    """備援來源：REST v0/packs 回傳同樣的原始欄位（packType/stage/priceInUsdt/
-    expectedValueInUsd）。缺點：activeFrom 可能為 None（main() 會用快取回填）。"""
+    """Fallback source: REST v0/packs returns the same raw fields (packType/stage/priceInUsdt/
+    expectedValueInUsd). Downside: activeFrom may be None (main() backfills it from cache)."""
     r = requests.get(REST_PACKS, params={"includeInactive": "true"}, headers=_HDRS, timeout=30)
     r.raise_for_status()
     return r.json().get("cardPacks", [])
 
 
 def fetch_packs() -> list[dict]:
-    """先重試 tRPC（開抽瞬間偶回 500），連續失敗才 fallback 到 REST，兩者都掛才拋。"""
+    """Retry tRPC first (it occasionally 500s the instant pulls open); only fall back to REST after repeated failures, and raise only if both are down."""
     last = None
     for attempt in range(3):
         try:
@@ -71,7 +77,7 @@ def fetch_packs() -> list[dict]:
             last = e
             if attempt < 2:
                 time.sleep(3 * (attempt + 1))
-    # tRPC 3 次全敗 → 改用 REST 備援，避免整輪空掃/漏接開抽
+    # tRPC failed all 3 times -> switch to the REST fallback, to avoid an empty round / missing the pull opening
     try:
         packs = _fetch_rest()
         print(f"  ⚠️ tRPC getAll 失敗（{type(last).__name__}），已改用 REST 備援（{len(packs)} 台）")
@@ -84,8 +90,8 @@ KNOWN_POOLS = {
     "0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910",  # omega
     "0xfda4a907d23d9f24271bc47483c5b983831e325e",  # eden
     "0xb2891022648c5fad3721c42c05d8d283d4d53080",  # renacrypt
-    "0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a",  # legacy/costume(舊)
-    "0x5bbd2f57fe5b4d74ef704436fee5d5175e609079",  # omega router (非池，排除)
+    "0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a",  # legacy/costume (old)
+    "0x5bbd2f57fe5b4d74ef704436fee5d5175e609079",  # omega router (not a pool, excluded)
 }
 
 
@@ -106,7 +112,7 @@ def _rpc_clients():
 
 
 def discover_new_pool(blocks: int = 5000) -> dict:
-    """掃最近區塊，找出被灌大量 mint（from=0x0）的全新合約 = 新卡池。"""
+    """Scan recent blocks for a brand-new contract loaded with many mints (from=0x0) = a new card pool."""
     from web3 import Web3
     clients = _rpc_clients()
     if not clients:
@@ -131,8 +137,8 @@ def discover_new_pool(blocks: int = 5000) -> dict:
 
     latest = clients[idx].eth.block_number
     start = latest - blocks
-    mint_to = collections.Counter()   # 0x0 -> X（被灌卡）
-    dist_from = collections.defaultdict(set)  # X -> {買家}
+    mint_to = collections.Counter()   # 0x0 -> X (loaded with cards)
+    dist_from = collections.defaultdict(set)  # X -> {buyers}
     cur = start
     while cur <= latest:
         end = min(cur + 50, latest)
@@ -151,12 +157,12 @@ def discover_new_pool(blocks: int = 5000) -> dict:
                 dist_from[frm].add(to)
         cur = end + 1
 
-    # 候選：被灌很多 mint，且不在已知名單
+    # Candidates: loaded with many mints and not in the known list
     cands = []
     for addr, n in mint_to.most_common():
         if addr in KNOWN_POOLS or addr == ZERO:
             continue
-        # 是合約嗎？
+        # Is it a contract?
         try:
             is_contract = len(clients[idx].eth.get_code(Web3.to_checksum_address(addr)).hex()) > 4
         except Exception:
@@ -169,7 +175,7 @@ def discover_new_pool(blocks: int = 5000) -> dict:
 
 
 def analyze_pool(addr: str, blocks: int = 4000) -> dict:
-    """掃最近 blocks 個區塊，統計卡池合約的灌卡 + 抽卡錢包分佈。"""
+    """Scan the most recent `blocks` blocks and tally the pool contract's load + pull wallet distribution."""
     from web3 import Web3
     topic = "0x" + Web3.keccak(text="Transfer(address,address,uint256)").hex().lstrip("0x")
     nft = Web3.to_checksum_address(NFT)
@@ -205,12 +211,12 @@ def analyze_pool(addr: str, blocks: int = 4000) -> dict:
 
     latest = clients[idx].eth.block_number
     start = latest - blocks
-    buyers = collections.Counter()   # 池 -> 買家（抽卡）
-    minted_in = 0                    # 0x0 -> 池（灌卡）
+    buyers = collections.Counter()   # pool -> buyers (pulls)
+    minted_in = 0                    # 0x0 -> pool (loads)
     loaded_from = collections.Counter()
     pulled_tokens = set()
-    minted_tokens = set()            # 灌進池但尚未抽走 = 仍在池內
-    pulled_detail = []               # [(token_id, buyer, block)] 抽出的每張
+    minted_tokens = set()            # loaded into the pool but not yet pulled = still in the pool
+    pulled_detail = []               # [(token_id, buyer, block)] for each pulled card
     first_block = last_block = None
     cur = start
     while cur <= latest:
@@ -259,7 +265,7 @@ def analyze_pool(addr: str, blocks: int = 4000) -> dict:
 
 
 def _load_market_by_token() -> dict:
-    """token_id -> {name, fmv, tier?} 取自 data/marketplace_all.json（Renaiss FMV）。"""
+    """token_id -> {name, fmv, tier?} taken from data/marketplace_all.json (Renaiss FMV)."""
     mp = DATA / "marketplace_all.json"
     out = {}
     if not mp.exists():
@@ -276,7 +282,7 @@ def _load_market_by_token() -> dict:
 
 
 def _tier_of(fmv, tiers: dict | None):
-    """用卡池分級的價格區間，把單張 fmv 對應回 TOP/S/A/B/C/D（缺 tier 時的後援）。"""
+    """Map a single fmv back to TOP/S/A/B/C/D using the pool's tier price bands (a fallback when tier is missing)."""
     if fmv is None or not tiers:
         return None
     for t in ["TOP", "S", "A", "B", "C", "D"]:
@@ -288,13 +294,14 @@ def _tier_of(fmv, tiers: dict | None):
 
 
 def classify_pulls(pool: dict, tiers: dict | None) -> dict:
-    """把已抽出的 token 對應回卡片（名稱/FMV/分級），找出已被抽走的大獎。
+    """Map pulled tokens back to cards (name/FMV/tier) and find the big prizes already pulled.
 
-    來源優先：marketplace_all.json（token_id→FMV）。新卡可能尚未上架 marketplace，
-    屆時 token_id 對不到 → 標 unknown，待 sync_renaiss_marketplace 補齊後自動補上。
+    Source priority: marketplace_all.json (token_id->FMV). New cards may not be listed on
+    the marketplace yet, in which case the token_id won't match -> mark unknown, filled in
+    automatically once sync_renaiss_marketplace catches up.
     """
     market = _load_market_by_token()
-    big = []          # 已抽出的大獎（TOP/S 或 FMV 高）
+    big = []          # big prizes already pulled (TOP/S or high FMV)
     pulled_known = []
     for tid, buyer, blk in pool.get("pulled_detail", []):
         mk = market.get(tid) or {}
@@ -307,7 +314,7 @@ def classify_pulls(pool: dict, tiers: dict | None) -> dict:
             big.append(rec)
     big.sort(key=lambda r: (r["fmv"] or 0), reverse=True)
 
-    # 剩餘池的大獎（還沒被抽走的 TOP/S）→ 仍可期待
+    # Big prizes remaining in the pool (TOP/S not yet pulled) -> still to look forward to
     remaining_big = []
     for tid in pool.get("remaining_tokens", []):
         mk = market.get(tid) or {}
@@ -318,7 +325,7 @@ def classify_pulls(pool: dict, tiers: dict | None) -> dict:
                                   "fmv": fmv, "tier": tier})
     remaining_big.sort(key=lambda r: (r["fmv"] or 0), reverse=True)
 
-    # 剩餘池估算 EV（已知 FMV 的剩餘卡平均）
+    # Estimated EV of the remaining pool (average over remaining cards with known FMV)
     rem_fmvs = [r["fmv"] for r in remaining_big if r["fmv"]]
     return {
         "big_prizes_pulled": big,
@@ -351,16 +358,16 @@ def main() -> int:
             prev = {}
 
     watched = []
-    # 只關注最近一檔開抽中/即將開抽的限量卡機（packType=limited, stage 非 archived）
+    # Only care about the most recent limited machine currently opening / about to open (packType=limited, stage not archived)
     live = [p for p in packs if p.get("packType") == "limited"
             and p.get("stage") not in ("archived",)]
     for p in live:
         slug = (p.get("name") or "").lower().replace(" ", "-")
-        # REST 備援缺 activeFrom → 用上輪快取回填，開抽窗口判斷才不會失效
+        # The REST fallback lacks activeFrom -> backfill from last round's cache so the pull-window check still works
         if not p.get("activeFrom") and (prev.get(slug) or {}).get("active_from"):
             p["activeFrom"] = prev[slug]["active_from"]
         af = _parse_iso(p.get("activeFrom"))
-        # 開抽窗口：activeFrom 前 30 分 ~ 之後 14 天，才掃鏈（避免空掃）
+        # Pull window: from 30 min before activeFrom to 14 days after, only then scan the chain (to avoid empty scans)
         in_window = af is not None and (af - now).total_seconds() <= 1800 \
             and (now - af).total_seconds() <= 14 * 86400
         cached_pool = (prev.get(slug) or {}).get("pool_address")
@@ -391,10 +398,10 @@ def main() -> int:
                 pool = analyze_pool(pool_addr)
                 rec["pool_address"] = pool_addr
                 rec["pool"] = pool
-                # 合併進 bowtie scrape 檔
+                # Merge into the bowtie scrape file
                 bpath = DATA / "new_pack_bowtie.json"
                 base = json.loads(bpath.read_text()) if bpath.exists() else {}
-                # 把已抽出的 token 對應回卡片，找出已被抽走 / 仍在池內的大獎
+                # Map pulled tokens back to cards; find the big prizes already pulled / still in the pool
                 bigp = classify_pulls(pool, base.get("tiers"))
                 rec["big_prizes_pulled"] = bigp["big_prizes_pulled"]
                 if base.get("slug") == slug or slug.startswith(base.get("slug", "###")):
@@ -407,7 +414,7 @@ def main() -> int:
                 print(f"  ✓ 灌卡 {pool.get('minted_into_pool')} · 抽卡 {pool.get('pulls_total')} "
                       f"· 買家 {pool.get('distinct_buyers')} · 已抽出大獎 {np_big} "
                       f"(剩 {len(bigp['big_prizes_remaining'])})")
-                # 首次抓到才發 Telegram
+                # Only send Telegram on the first capture
                 if not cached_pool:
                     try:
                         try:

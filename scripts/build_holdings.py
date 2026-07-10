@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""build_holdings.py — 由鏈上轉移事件推導「每張卡目前的存放位置（持有者）」+ 卡片資訊。
+"""build_holdings.py — derive "where each card currently sits (its holder)" + card info from on-chain transfer events.
 
-資料來源：
-  - data/onchain_pulls.db   : 每筆 ERC721 Transfer（token_id → to_addr = 當前持有者）
-  - data/marketplace_all.json: 卡片身分（name / set_name / image_url / fmv / grade / 連結）
-  - data/pull_log.db        : 補充身分（card_name / card_fmv_usd / card_tier）
+Data sources:
+  - data/onchain_pulls.db   : every ERC721 Transfer (token_id → to_addr = current holder)
+  - data/marketplace_all.json: card identity (name / set_name / image_url / fmv / grade / links)
+  - data/pull_log.db        : supplementary identity (card_name / card_fmv_usd / card_tier)
 
-產出：
-  - data/holdings.json      : 每個 token 的「當前持有者 + 卡片資訊」，給 dashboard /holdings 用
-  - 同時回填 onchain_pulls.card_name / market_fmv（能 join 到身分的部分）
+Outputs:
+  - data/holdings.json      : per-token "current holder + card info" for the dashboard /holdings view
+  - Also backfills onchain_pulls.card_name / market_fmv (for the rows whose identity can be joined)
 
-每個 token 的「當前持有者」= 該 token_id 在 onchain_pulls 中 block_number 最大那筆的 to_addr。
+Each token's "current holder" = the to_addr of that token_id's row with the largest block_number in onchain_pulls.
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ BSCSCAN_ADDR = "https://bscscan.com/address/"
 
 
 def _load_market() -> tuple[dict[str, dict], dict[str, str]]:
-    """回傳 (token_id→卡片, 卡名→image_url)。後者用於 token_id 對不上、但卡名相同時補圖。"""
+    """Return (token_id→card, name→image_url). The latter backfills images when token_id doesn't match but the name does."""
     if not MARKET_JSON.exists():
         return {}, {}
     by_tid: dict[str, dict] = {}
@@ -71,7 +71,7 @@ def build() -> dict:
     conn = sqlite3.connect(ONCHAIN_DB)
     conn.row_factory = sqlite3.Row
 
-    # 每個 token 的最新一筆轉移 = 當前持有者（block_number 最大，平手用 log_index）
+    # Each token's latest transfer = current holder (largest block_number, ties broken by log_index)
     rows = conn.execute(
         """
         SELECT t.token_id, t.to_addr, t.block_number, t.block_time, t.is_mint
@@ -92,11 +92,11 @@ def build() -> dict:
         pl = pulllog.get(tid) or {}
         name = mk.get("name") or pl.get("name")
         fmv = mk.get("fmv") if mk.get("fmv") is not None else pl.get("fmv")
-        # 圖片：優先 token_id 對到的 marketplace 圖；否則用卡名比對補圖
+        # Image: prefer the marketplace image matched by token_id; otherwise backfill by matching card name
         image = mk.get("image_url") or (name2img.get(name) if name else "") or ""
         identified = bool(name)
 
-        # 回填 onchain_pulls 的身分欄位（只回填能 join 到的）
+        # Backfill onchain_pulls identity columns (only those that can be joined)
         if name:
             cur = conn.execute(
                 "UPDATE onchain_pulls SET card_name=?, market_fmv=COALESCE(market_fmv,?), "
@@ -128,7 +128,7 @@ def build() -> dict:
     conn.commit()
     conn.close()
 
-    # 已識別、FMV 高者排前
+    # Identified cards first, then by descending FMV
     holdings.sort(key=lambda h: (h["identified"], h["fmv"] or 0), reverse=True)
 
     payload = {

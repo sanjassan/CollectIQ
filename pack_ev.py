@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
-卡機（pack）EV 計算 —— 把「官方 EV」與「我們自己算的 EV」清楚分開。
+Pack EV calculation -- keeps the "official EV" and "our own computed EV" clearly separate.
 
-三個數字：
-  1. official_ev   = Renaiss/平台公布的 current_platform_ev_usd（官方，不是我們算的）。
-  2. empirical_ev  = 我們從觀察到的抽卡分佈算的平均 FMV（獨立重算，但仍用對方逐張 FMV）。
-  3. our_ev        = empirical_ev × 外部校正係數。
-                     校正係數 = comparison.json 裡 median(我們自抓外部價 / Renaiss FMV)，
-                     代表「Renaiss FMV 相對真實外部市場平均偏離多少」。
-                     <1 表示 Renaiss FMV 整體偏高（灌水），我們把 EV 往下修；反之往上。
+Three numbers:
+  1. official_ev   = current_platform_ev_usd published by Renaiss/the platform
+                     (official, not computed by us).
+  2. empirical_ev  = the average FMV we compute from the observed pull
+                     distribution (an independent recompute, but still using
+                     their per-card FMV).
+  3. our_ev        = empirical_ev × external correction factor.
+                     Correction factor = median(our scraped external price /
+                     Renaiss FMV) from comparison.json, representing "how far
+                     the Renaiss FMV deviates from the true external market
+                     average". <1 means the Renaiss FMV is inflated overall, so
+                     we adjust EV downward; and vice versa.
 
-這樣 our_ev 才是真正「不靠 Renaiss 價格來源、用我們自抓外部市場價校正過」的期望值。
+This way our_ev is a genuine expected value that "doesn't rely on Renaiss price
+sources and is corrected by our own scraped external market prices".
 """
 from __future__ import annotations
 
@@ -24,9 +30,10 @@ DATA = os.path.join(ROOT, "data")
 
 
 def external_correction_factor(comparison_path: Optional[str] = None) -> dict:
-    """從 comparison.json 算外部校正係數 median(our_price / renaiss_fmv)。
+    """Compute the external correction factor median(our_price / renaiss_fmv) from comparison.json.
 
-    回傳 {factor, sample_n, source}；資料不足時 factor=1.0（不調整）。
+    Returns {factor, sample_n, source}; when data is insufficient, factor=1.0
+    (no adjustment).
     """
     path = comparison_path or os.path.join(DATA, "comparison.json")
     if not os.path.exists(path):
@@ -48,7 +55,7 @@ def external_correction_factor(comparison_path: Optional[str] = None) -> dict:
 
 
 def analyze_packs(pack_data: List[Dict], correction: Optional[dict] = None) -> dict:
-    """對每個 pack 算 official / empirical / our EV。"""
+    """Compute official / empirical / our EV for each pack."""
     corr = correction or external_correction_factor()
     cf = corr["factor"]
 
@@ -58,7 +65,7 @@ def analyze_packs(pack_data: List[Dict], correction: Optional[dict] = None) -> d
         empirical = p.get("empirical_ev_usd")
         our = round(empirical * cf, 2) if empirical is not None else None
 
-        # 與官方的落差（用我們校正後的 EV 對比官方公布值）
+        # Gap vs the official value (our corrected EV compared to the published official value)
         delta_vs_official = None
         if our is not None and official:
             delta_vs_official = round((our - official) / official * 100, 1)
@@ -79,7 +86,7 @@ def analyze_packs(pack_data: List[Dict], correction: Optional[dict] = None) -> d
             "last_s_card_name": p.get("last_s_card_name"),
         })
 
-    # 排序：有官方 EV 的（在售卡機）優先，EV 高到低
+    # Sort: packs with an official EV (on-sale packs) first, EV high to low
     results.sort(key=lambda r: (r["official_ev_usd"] is None, -(r["official_ev_usd"] or 0)))
     return {
         "correction": corr,

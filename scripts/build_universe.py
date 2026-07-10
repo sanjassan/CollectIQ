@@ -2,18 +2,18 @@
 """
 CollectIQ — build_universe.py
 ================================
-把所有資料源合併成一個 SQLite 「宇宙資料庫」：
+Merge all data sources into a single SQLite "universe database":
   1. marketplace_all.json   → Renaiss FMV / ask / image / cert
-  2. holdings.json          → 鏈上持有者（holder）
-  3. Index API /v1/graded   → 真實市場定價 + cert 圖片 + 價格歷史
+  2. holdings.json          → on-chain holder
+  3. Index API /v1/graded   → real market pricing + cert images + price history
 
-輸出：data/collectiq.db
-每次執行只補齊尚未查過 Index API 的 cert（斷點續查）。
+Output: data/collectiq.db
+Each run only fills in certs not yet queried against the Index API (resumable).
 
-用法：
-  python3 scripts/build_universe.py                # 正常跑
-  python3 scripts/build_universe.py --reset        # 清空重跑
-  python3 scripts/build_universe.py --limit 100   # 只跑前 100 筆（測試）
+Usage:
+  python3 scripts/build_universe.py                # normal run
+  python3 scripts/build_universe.py --reset        # wipe and rebuild
+  python3 scripts/build_universe.py --limit 100   # only the first 100 rows (testing)
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 
 import requests
 
-# ─── 路徑 ─────────────────────────────────────────────────────────────────────
+# ─── Paths ────────────────────────────────────────────────────────────────────
 BASE   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA   = os.path.join(BASE, "data")
 DB_PATH= os.path.join(DATA, "collectiq.db")
@@ -37,7 +37,7 @@ HOLDINGS_PATH = os.path.join(DATA, "holdings.json")
 
 INDEX_BASE    = "https://api.renaissos.com/v1"
 RENAISS_BASE  = "https://api.renaiss.xyz/v0"
-DELAY         = 10.0   # 秒：10s 安全避免 429（Index API ~6req/min 限制）
+DELAY         = 10.0   # seconds: 10s is safe to avoid 429 (Index API ~6 req/min limit)
 HEADERS       = {"Accept": "application/json", "User-Agent": "collectiq/1.0"}
 
 # ─── Schema ───────────────────────────────────────────────────────────────────
@@ -114,7 +114,7 @@ def open_db() -> sqlite3.Connection:
 
 # ─── Ingest helpers ───────────────────────────────────────────────────────────
 def load_marketplace(conn: sqlite3.Connection):
-    """載入 marketplace_all.json → tokens 表。"""
+    """Load marketplace_all.json → tokens table."""
     if not os.path.exists(MKT_PATH):
         print(f"[WARN] {MKT_PATH} not found"); return
     rows = json.load(open(MKT_PATH, encoding="utf-8"))
@@ -147,7 +147,7 @@ def load_marketplace(conn: sqlite3.Connection):
 
 
 def load_holdings(conn: sqlite3.Connection):
-    """從 holdings.json 把 holder 欄位回填進 tokens。"""
+    """Backfill the holder column into tokens from holdings.json."""
     if not os.path.exists(HOLDINGS_PATH):
         print(f"[WARN] {HOLDINGS_PATH} not found"); return
     data  = json.load(open(HOLDINGS_PATH, encoding="utf-8"))
@@ -172,7 +172,7 @@ def load_holdings(conn: sqlite3.Connection):
 
 
 def _api_get_safe(url: str, params: dict = None) -> dict:
-    """GET with 429 backoff retry（最多 5 次，首次 30s 起跳）。"""
+    """GET with 429 backoff retry (up to 5 attempts, starting at 30s)."""
     _429_hit = False
     for attempt in range(5):
         try:
@@ -212,9 +212,9 @@ def _api_get_safe(url: str, params: dict = None) -> dict:
 
 def _extract_search_key(row: sqlite3.Row) -> str:
     """
-    從 token 欄位組出最佳搜尋字串。
-    優先用 character_name + set 縮寫 + grade_label；
-    不然 fallback 到 name 的前 50 個字元。
+    Build the best search string from the token's columns.
+    Prefer character_name + set abbreviation + grade_label;
+    otherwise fall back to the first 50 characters of name.
     """
     char = row["character_name"] or ""
     grade = row["grade"] or ""
@@ -236,13 +236,13 @@ def _extract_search_key(row: sqlite3.Row) -> str:
 
 def fetch_index_for_token(row: sqlite3.Row) -> dict:
     """
-    查 Index API — 搜尋優先策略（Search-first）。
-    直接用 character name + grade 搜尋，覆蓋率遠高於 /graded cert lookup。
-    避免對每張卡多打一次 cert API 造成 rate limit。
+    Query the Index API — search-first strategy.
+    Searching directly by character name + grade gives far better coverage than /graded cert lookup.
+    Avoids hitting the cert API an extra time per card, which would trigger rate limits.
     """
     cert = row["serial"] or ""
 
-    # Search-first: name search（廣泛，覆蓋率高）
+    # Search-first: name search (broad, high coverage)
     q = _extract_search_key(row)
     if not q or len(q) < 4:
         return {}
@@ -250,7 +250,7 @@ def fetch_index_for_token(row: sqlite3.Row) -> dict:
     results = resp.get("results", [])
     if not results:
         return {}
-    # 取第一筆（最佳匹配）並包成類似 graded response 的格式
+    # Take the first result (best match) and wrap it into a graded-response-like format
     hit = results[0]
     return {
         "found": True,
@@ -281,10 +281,10 @@ def fetch_index_for_token(row: sqlite3.Row) -> dict:
 
 def enrich_from_index(conn: sqlite3.Connection, limit: int = 0):
     """
-    對所有 index_queried=0 的 token 查 Index API，
-    把真實市場價 + cert 圖片寫回 DB，並計算 fmv_gap。
+    Query the Index API for every token with index_queried=0,
+    write the real market price + cert images back to the DB, and compute fmv_gap.
     """
-    # 每日配額 95 枚（留 5 buffer）；依 renaiss_fmv 從高到低優先處理高價值卡
+    # Daily quota of 95 (leaving a 5 buffer); process high-value cards first by descending renaiss_fmv
     DAILY_QUOTA = int(os.environ.get("INDEX_DAILY_QUOTA", 95))
     q = """SELECT token_id, serial, renaiss_fmv, name, character_name, grade, grader
            FROM tokens WHERE index_queried=0
@@ -339,7 +339,7 @@ def enrich_from_index(conn: sqlite3.Connection, limit: int = 0):
             gap_pct = None
             gap_usd = None
 
-        # 若 cert_item 有圖且現有 image_url 是舊的 renaiss render，更新
+        # If cert_item has an image and the existing image_url is an old renaiss render, update it
         conn.execute("""
             UPDATE tokens SET
                 index_price_usd=?, index_confidence=?, index_delta_pct=?,
@@ -376,7 +376,7 @@ def enrich_from_index(conn: sqlite3.Connection, limit: int = 0):
 
 
 def build_wallet_summary(conn: sqlite3.Connection):
-    """彙整每個持有人的統計（總 FMV、平均 gap、持有張數）。"""
+    """Aggregate per-holder stats (total FMV, average gap, cards held)."""
     conn.execute("DELETE FROM wallet_summary")
     conn.execute("""
         INSERT INTO wallet_summary
@@ -400,7 +400,7 @@ def build_wallet_summary(conn: sqlite3.Connection):
 
 
 def export_fmv_gap_json(conn: sqlite3.Connection):
-    """把 FMV 落差最大的 500 筆匯出成 JSON，供 dashboard 直接讀。"""
+    """Export the 500 largest FMV gaps to JSON for the dashboard to read directly."""
     rows = conn.execute("""
         SELECT token_id, name, set_name, grader, grade, serial,
                renaiss_fmv, index_price_usd, fmv_gap_pct, fmv_gap_usd,
@@ -471,7 +471,7 @@ if __name__ == "__main__":
 
     conn = open_db()
 
-    # 1. 是否要先更新 marketplace_all.json
+    # 1. Optionally refresh marketplace_all.json first
     if args.refresh_mkt:
         print("[refresh] pulling fresh marketplace from api.renaiss.xyz …")
         import sys

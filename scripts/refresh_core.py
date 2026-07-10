@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """
-refresh_core.py — 定時增量刷新 collectiq_core.db 的導出層。
+refresh_core.py — periodic incremental refresh of collectiq_core.db's derived layer.
 
-RAW 層（ledger_transfers）由 pool_live_monitor 即時雙寫；本檔負責把 RAW +
-來源快照重算成 CURATED/MART，並更新獎勵與補資料佇列。全部冪等，可高頻排程。
+The RAW layer (ledger_transfers) is dual-written in real time by pool_live_monitor; this file
+recomputes RAW + source snapshots into CURATED/MART and updates the rewards and enrichment queues.
+Everything is idempotent and safe to schedule at high frequency.
 
-流程：
-  1) backfill_transfers      補進 onchain_pulls / live_pool.events 新增列（去重）
+Steps:
+  1) backfill_transfers      add new rows into onchain_pulls / live_pool.events (deduplicated)
   2) backfill_dims           dim_card / dim_wallet
-  3) backfill_holdings       fact_holding（由 RAW 摺疊）
-  4) backfill_market         ledger_market（對當前掛牌快照做 diff）
-  5) backfill_fmv_snapshots  FMV 時序
-  6) rewards                 伊布全款 / 連號 / SBT
-  7) enrich queue            Index API 優先佇列
+  3) backfill_holdings       fact_holding (folded from RAW)
+  4) backfill_market         ledger_market (diffed against the current listing snapshot)
+  5) backfill_fmv_snapshots  FMV time series
+  6) rewards                 Eeveelution full set / serial runs / SBT
+  7) enrich queue            Index API priority queue
 
-排程：launchd ai.renaiss.corerefresh，StartInterval=900（每 15 分）。
+Schedule: launchd ai.renaiss.corerefresh, StartInterval=900 (every 15 min).
 """
 from __future__ import annotations
 

@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """
-獨立外部比價（our_price）—— 不依賴 Renaiss 的價格來源。
+Independent external price check (our_price) -- a price source that does
+not depend on Renaiss.
 
-需求背景：
-  Renaiss 的 FMV 本來就是抓 ALT/eBay 算出來的市場公允價，但可能會抓錯，
-  所以我們「自己再抓一次」做交叉驗證。內部價(renaiss FMV / SELL 掛單) vs
-  外部價(同一張鑑定卡：grader+grade+卡名+編號 的公開市場成交價)。
+Background:
+  Renaiss's FMV is itself a fair market value derived from scraping ALT/eBay,
+  but it can be wrong, so we "scrape it ourselves again" for cross-validation.
+  Internal price (renaiss FMV / SELL listing) vs external price (the public
+  market sale price of the same graded card: grader+grade+name+number).
 
-來源選擇：
-  - 130point.com → 對 curl 直接 403（需 cookie/JS），不穩。
-  - eBay / TCGplayer / PSA APR → 沒有公開免金鑰 API，DOM 易變。
-  - PriceCharting → 公開、可抓，且**彙整 eBay 成交價**並依鑑定等級分欄
-    (Ungraded / Grade 7 / 8 / 9 / 9.5 / PSA 10)，最適合做「同分卡」交叉比價。
-  因此主來源用 PriceCharting；之後可再掛上其他來源（fetcher 介面可擴充）。
+Source selection:
+  - 130point.com -> returns 403 directly to curl (needs cookie/JS); unreliable.
+  - eBay / TCGplayer / PSA APR -> no public keyless API, and the DOM changes often.
+  - PriceCharting -> public, scrapable, and it **aggregates eBay sale prices**
+    split into columns by grade (Ungraded / Grade 7 / 8 / 9 / 9.5 / PSA 10),
+    which is ideal for "same-grade card" cross-comparison.
+  So the primary source is PriceCharting; other sources can be added later
+  (the fetcher interface is extensible).
 
-原則（與 external_price.py 一致）：**絕不捏造價格**。查不到就回 None，
-標示 sources=0，交由呼叫端決定是否沿用 Renaiss FMV。
+Principle (consistent with external_price.py): **never fabricate a price**.
+When nothing is found, return None and mark sources=0, leaving it to the
+caller to decide whether to keep the Renaiss FMV.
 """
 from __future__ import annotations
 
@@ -30,14 +35,14 @@ from bs4 import BeautifulSoup
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CACHE_FILE = os.path.join(ROOT, "data", "our_price_cache.json")
-CACHE_TTL = 24 * 3600  # 鑑定卡價格變動慢，快取一天
+CACHE_TTL = 24 * 3600  # graded card prices move slowly; cache for a day
 
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 )
 
-# PriceCharting 卡片價格表的 <td id=...> ↔ 鑑定等級對照（實測 2026-06）。
+# Mapping of PriceCharting price-table <td id=...> to grade (verified 2026-06).
 PC_ID_TO_GRADE = {
     "used_price": "Ungraded",
     "complete_price": "Grade 7",
@@ -48,23 +53,23 @@ PC_ID_TO_GRADE = {
 }
 
 
-# 鑑定商換算係數（以 PSA 為基準 = 1.0）
-# 同一張卡、同分數，不同鑑定商的市場價比例。
-# 來源：eBay 成交價觀察值，可依市場變化調整。
+# Grader conversion factors (PSA as the baseline = 1.0).
+# The market price ratio between graders for the same card at the same grade.
+# Source: observed eBay sale prices; adjust as the market shifts.
 GRADER_MULTIPLIER = {
     # grade 10
     ("psa", 10):  1.0,
-    ("cgc", 10):  0.60,   # CGC 10 Pristine ≈ PSA 10 的 60%
+    ("cgc", 10):  0.60,   # CGC 10 Pristine ≈ 60% of PSA 10
     ("bgs", 10):  0.75,   # BGS 10 Gold Label ≈ 75%
     # grade 9.5
     ("psa", 9.5): 1.0,
     ("cgc", 9.5): 0.65,
-    ("bgs", 9.5): 0.85,   # BGS 9.5 Gem Mint 口碑好，接近 PSA
+    ("bgs", 9.5): 0.85,   # BGS 9.5 Gem Mint has a strong reputation, close to PSA
     # grade 9
     ("psa", 9):   1.0,
     ("cgc", 9):   0.70,
     ("bgs", 9):   0.80,
-    # grade 8 以下差距縮小
+    # gap narrows at grade 8 and below
     ("psa", 8):   1.0,
     ("cgc", 8):   0.80,
     ("bgs", 8):   0.85,
@@ -73,13 +78,14 @@ GRADER_MULTIPLIER = {
 
 def grader_convert(price: float, from_grader: str, from_grade: float,
                    to_grader: str = "psa") -> Optional[float]:
-    """把某鑑定商的價格換算到另一家的等價價格。
+    """Convert a price from one grader to the equivalent price of another.
 
-    例：PSA 10 = $300 → CGC 10 等價 ≈ $300 × 0.60 = $180
-    反過來：CGC 10 = $180 → 換算成 PSA 等價 = $180 / 0.60 = $300
+    e.g. PSA 10 = $300 -> CGC 10 equivalent ≈ $300 × 0.60 = $180
+    and back: CGC 10 = $180 -> converted to PSA equivalent = $180 / 0.60 = $300
 
-    用途：PriceCharting 只有 PSA 10 欄的價格，卡片是 CGC 10 時，
-    把 PSA 價 × 0.60 = CGC 的合理市價，再跟 Renaiss FMV 比。
+    Use case: PriceCharting only has the PSA 10 column price. When the card is
+    CGC 10, PSA price × 0.60 = the fair CGC market price, then compare against
+    the Renaiss FMV.
     """
     to_key = (to_grader.lower().strip(), from_grade)
     to_mult = GRADER_MULTIPLIER.get(to_key)
@@ -89,10 +95,11 @@ def grader_convert(price: float, from_grader: str, from_grade: float,
 
 
 def _grade_label(grader: str, grade: str) -> Optional[str]:
-    """把 Renaiss 的 grader/grade 對映到 PriceCharting 的欄位標籤。
+    """Map Renaiss's grader/grade to a PriceCharting column label.
 
-    一律對到 PSA 10 欄（PriceCharting 最完整的欄位），再由呼叫端用
-    grader_convert() 換算成該卡實際鑑定商的等價價格。
+    Always maps to the PSA 10 column (PriceCharting's most complete column);
+    the caller then uses grader_convert() to convert to the equivalent price
+    for the card's actual grader.
     """
     g = (grade or "").lower().strip()
     if not g or g in ("raw", "ungraded", "none"):
@@ -115,7 +122,7 @@ def _grade_label(grader: str, grade: str) -> Optional[str]:
 
 
 def _parse_price(text: str) -> Optional[float]:
-    """從 '$119.99 $0.00' / '$36.50 + $2.24' / '-' 取出主價格。"""
+    """Extract the primary price from '$119.99 $0.00' / '$36.50 + $2.24' / '-'."""
     if not text:
         return None
     m = re.search(r"\$([\d,]+\.?\d*)", text)
@@ -128,7 +135,8 @@ def _parse_price(text: str) -> Optional[float]:
         return None
 
 
-# PriceCharting 的 set slug 不含這些「系列大標」，留著反而比對不到。
+# PriceCharting set slugs don't include these "series headings"; keeping them
+# actually prevents a match.
 _SERIES_NOISE = [
     r"pal en-?", r"svp en-?", r"sv\d+[a-z]?-?", r"csm\d+[a-z]?", r"s\d+[a-z]?-",
     r"sword\s*&?\s*shield", r"scarlet\s*&?\s*violet", r"sun\s*&?\s*moon",
@@ -138,7 +146,7 @@ _SERIES_NOISE = [
 
 def _clean_set(set_name: str) -> str:
     s = set_name
-    # 語言標記：PriceCharting 用 'Japanese' / 'Chinese'
+    # Language markers: PriceCharting uses 'Japanese' / 'Chinese'
     lang = ""
     if re.search(r"\bjapanese\b", s, re.I):
         lang = "japanese"
@@ -152,18 +160,19 @@ def _clean_set(set_name: str) -> str:
 
 
 def build_query(card: Dict, drop_char: bool = False) -> str:
-    """從卡片欄位組出 PriceCharting 搜尋字串。
+    """Build a PriceCharting search string from the card fields.
 
-    例：set='Pokemon Pal En-Paldea Evolved', char='Skeledirge Ex', num='258'
+    e.g. set='Pokemon Pal En-Paldea Evolved', char='Skeledirge Ex', num='258'
         -> 'pokemon paldea evolved skeledirge ex 258'
-    去掉系列大標(Sword & Shield...)、語言/版本碼、'PSA 10 Gem Mint 2023' 雜訊。
-    drop_char=True 時省略角色名，僅用 set+number（搜不到時的退路）。
+    Strips series headings (Sword & Shield...), language/edition codes, and
+    'PSA 10 Gem Mint 2023' noise. When drop_char=True, omits the character
+    name and uses only set+number (a fallback when nothing is found).
     """
     parts: List[str] = []
     set_clean = _clean_set((card.get("set_name") or "").strip())
     char = (card.get("character_name") or "").strip()
     num_raw = str(card.get("card_number") or "").strip()
-    num = num_raw.lstrip("0") or num_raw  # '046' -> '46'，但別把 '0' 清成空
+    num = num_raw.lstrip("0") or num_raw  # '046' -> '46', but don't turn '0' into ''
 
     if set_clean:
         parts.append(set_clean)
@@ -181,9 +190,10 @@ def build_query(card: Dict, drop_char: bool = False) -> str:
     return q
 
 
-# pack_content 只有一整串 name（如 "PSA 10 Gem Mint 2014 Pokemon Japanese
-# Xy Promo #XY-P Pitch's Pikachu-Holo"），沒有拆好的 set/char/number 欄位，
-# 直接丟進 build_query 會被清成只剩 "pokemon"。這裡先把它拆回結構化欄位。
+# pack_content only has one combined name string (e.g. "PSA 10 Gem Mint 2014
+# Pokemon Japanese Xy Promo #XY-P Pitch's Pikachu-Holo") with no separate
+# set/char/number fields; feeding it straight into build_query would collapse
+# it down to just "pokemon". Here we first split it back into structured fields.
 _GRADE_PREFIX_RE = re.compile(
     r"^\s*(?:PSA|BGS|CGC|SGC|ACE)\s*[\d.]+"
     r"(?:\s+(?:Gem\s*Mint|Gem\s*MT|Mint|Pristine|NM-?MT|Near\s*Mint|"
@@ -199,21 +209,22 @@ _CARD_SUFFIX_RE = re.compile(
 
 
 def parse_card_name(name: str) -> Dict[str, str]:
-    """把 pack_content 的整串 name 拆成 build_query 需要的結構化欄位。
+    """Split the combined pack_content name into the structured fields build_query needs.
 
     'PSA 10 Gem Mint 2014 Pokemon Japanese Xy Promo #XY-P Pitch's Pikachu-Holo'
       -> set_name='Japanese Xy Promo', character_name="Pitch's Pikachu",
          card_number='XY-P', year='2014'
-    拆不出來時對應欄位留空字串（build_query 仍可退化處理）。
+    When a part can't be parsed, its field is left as an empty string
+    (build_query can still degrade gracefully).
     """
     s = (name or "").strip()
-    s = _GRADE_PREFIX_RE.sub("", s)                       # 去鑑定分數前綴
+    s = _GRADE_PREFIX_RE.sub("", s)                       # strip the grade prefix
     year = ""
     ym = re.match(r"(\d{4})\s+", s)
     if ym:
         year = ym.group(1)
         s = s[ym.end():]
-    s = re.sub(r"^pokemon\s+", "", s, flags=re.I)         # 去 'Pokemon'
+    s = re.sub(r"^pokemon\s+", "", s, flags=re.I)         # strip 'Pokemon'
     lang = ""
     lm = re.match(r"(japanese|chinese|english)\s+", s, re.I)
     if lm:
@@ -238,11 +249,13 @@ def parse_card_name(name: str) -> Dict[str, str]:
 
 
 def _title_matches_card(matched_title: str, character_name: str) -> bool:
-    """防呆：確認 PriceCharting 對到的商品標題含卡片主角名，擋掉
-    '同編號不同卡'（如查 Blastoise #61 卻被對到 Regirock #61）的假匹配。
+    """Sanity check: confirm the matched PriceCharting product title contains
+    the card's main character name, to block "same number, different card"
+    false matches (e.g. searching Blastoise #61 but matching Regirock #61).
 
-    角色名的主要 token（長度≥3 的字）至少要有一個出現在標題裡；
-    角色名為空（少數純促銷卡）時不強制，交由 set+number 判斷。
+    At least one of the character name's main tokens (words of length >= 3)
+    must appear in the title. When the character name is empty (a few purely
+    promotional cards), this isn't enforced and set+number decides.
     """
     if not character_name:
         return True
@@ -256,7 +269,7 @@ def _title_matches_card(matched_title: str, character_name: str) -> bool:
 
 
 class OurPriceChecker:
-    """獨立外部比價（PriceCharting 主來源）。"""
+    """Independent external price check (PriceCharting as the primary source)."""
 
     def __init__(self, throttle: float = 1.2):
         self.throttle = throttle
@@ -279,7 +292,7 @@ class OurPriceChecker:
             json.dump(self.cache, f, indent=2, ensure_ascii=False)
 
     def _fetch_pricecharting(self, query: str) -> Optional[dict]:
-        """搜尋並解析 PriceCharting 商品頁，回傳各等級價格 + 量能 + 來源 URL。"""
+        """Search and parse a PriceCharting product page; return per-grade prices + volume + source URL."""
         url = (
             "https://www.pricecharting.com/search-products"
             f"?q={requests.utils.quote(query)}&type=prices"
@@ -292,7 +305,7 @@ class OurPriceChecker:
         if r.status_code != 200:
             print(f"[WARN] pricecharting HTTP {r.status_code} for {query!r}")
             return None
-        # 搜尋多結果頁（沒 redirect 到商品頁）→ 視為查無精確匹配
+        # Multi-result search page (no redirect to a product page) -> treat as no exact match
         if "/search-products" in r.url and "/game/" not in r.url:
             print(f"[WARN] pricecharting 無精確匹配: {query!r}")
             return None
@@ -311,7 +324,7 @@ class OurPriceChecker:
             if price is not None:
                 grades[label] = {"price": price}
 
-        # 量能（第三列 td: 'volume: N sales per ...'）
+        # Volume (third row td: 'volume: N sales per ...')
         title_el = soup.find("title")
         return {
             "grades": grades,
@@ -321,18 +334,20 @@ class OurPriceChecker:
         }
 
     def get_independent_price(self, card: Dict, force: bool = False) -> dict:
-        """取得單卡的獨立外部價（不碰 Renaiss 價格來源）。
+        """Get a single card's independent external price (without touching Renaiss price sources).
 
-        回傳：
-          our_price        對應該卡鑑定等級的外部成交價（查不到 = None）
-          grade_matched    實際對到的等級欄位
-          all_grades       全部等級價格（透明化，dashboard 可展開）
+        Returns:
+          our_price        external sale price for the card's grade (None if not found)
+          grade_matched    the grade column actually matched
+          all_grades       prices for all grades (transparency; the dashboard can expand)
           source / source_url / matched_title
-          sources          1=有抓到價, 0=未知
+          sources          1=price found, 0=unknown
           query / checked_at
         """
-        # pack_content 卡片只有整串 name，沒有 set/char/number 欄位時先拆解，
-        # 否則 build_query 會把整串壓成只剩 "pokemon"（永遠對不中）。
+        # A pack_content card only has the combined name string; when the
+        # set/char/number fields are missing, parse it first, otherwise
+        # build_query collapses the whole string down to just "pokemon"
+        # (which never matches).
         if card.get("name") and not (card.get("set_name") or card.get("character_name")):
             card = {**card, **parse_card_name(card.get("name", ""))}
 
@@ -348,7 +363,7 @@ class OurPriceChecker:
         grade_label = _grade_label(card.get("grader", ""), card.get("grade", ""))
         character_name = str(card.get("character_name") or "")
         queries = [query]
-        alt = build_query(card, drop_char=True)  # 退路：只用 set+number
+        alt = build_query(card, drop_char=True)  # fallback: use only set+number
         if alt != query:
             queries.append(alt)
 
@@ -369,7 +384,7 @@ class OurPriceChecker:
         pc = None
         for q in queries:
             pc = self._fetch_pricecharting(q)
-            time.sleep(self.throttle)  # 尊重對方站台
+            time.sleep(self.throttle)  # be respectful to the remote site
             if pc and pc.get("grades"):
                 result["query"] = q
                 break
@@ -379,8 +394,10 @@ class OurPriceChecker:
             result["source"] = pc["source"]
             result["source_url"] = pc["source_url"]
             result["matched_title"] = pc["matched_title"]
-            # 防呆：標題必須含卡片主角名，否則視為「同編號不同卡」假匹配，
-            # 寧可回 None（sources=0）也不給錯價（會污染幸運值）。
+            # Sanity check: the title must contain the card's main character
+            # name, otherwise treat it as a "same number, different card" false
+            # match. Better to return None (sources=0) than give a wrong price
+            # (which would pollute the luck metric).
             if not _title_matches_card(pc.get("matched_title", ""), character_name):
                 result["title_mismatch"] = pc.get("matched_title")
                 self.cache[cache_key] = result
@@ -389,8 +406,10 @@ class OurPriceChecker:
             if grade_label and grade_label in pc["grades"]:
                 chosen = grade_label
             elif grade_label in ("PSA 10", None) and "PSA 10" in pc["grades"]:
-                # 只有「本來就要頂級價 / 未知等級」時才退而求其次用 PSA 10；
-                # 低等級卡（Grade 9/8）缺該欄就回 None，不可套 PSA10 價灌水幸運值。
+                # Only fall back to PSA 10 when we wanted the top price anyway
+                # or the grade is unknown; for lower-grade cards (Grade 9/8),
+                # if that column is missing return None -- don't apply the
+                # PSA 10 price and inflate the luck metric.
                 chosen = "PSA 10"
             if chosen:
                 result["grade_matched"] = chosen
@@ -402,25 +421,28 @@ class OurPriceChecker:
 
 
 def compare_card(card: Dict, our: dict) -> dict:
-    """把 Renaiss 內部價與我們的外部價組成一筆比較結果。
+    """Assemble a comparison record from the Renaiss internal price and our external price.
 
-    內部價 = renaiss FMV（市場公允價）；另記 SELL 掛單價 ask_price。
-    外部價 = our_price（PriceCharting 同分卡成交，基準為 PSA）。
+    Internal price = renaiss FMV (fair market value); the SELL listing price
+    ask_price is also recorded.
+    External price = our_price (PriceCharting same-grade sales, PSA baseline).
 
-    若卡片鑑定商不是 PSA，用 grader_convert() 把 PSA 欄的價格換算成
-    該鑑定商的等價市場價，再跟 Renaiss FMV 比。
+    If the card's grader isn't PSA, use grader_convert() to convert the PSA
+    column price to that grader's equivalent market price, then compare against
+    the Renaiss FMV.
 
-    delta_pct = (換算後外部價 - 內部)/內部，正值代表 Renaiss FMV「低估」。
+    delta_pct = (converted external price - internal) / internal; a positive
+    value means the Renaiss FMV "undervalues" the card.
     """
     fmv = card.get("fmv")
     ask = card.get("ask_price")
-    ext_raw = our.get("our_price")  # PriceCharting 原始價（PSA 基準）
+    ext_raw = our.get("our_price")  # raw PriceCharting price (PSA baseline)
 
     card_grader = (card.get("grader") or "").strip()
     card_grade_str = (card.get("grade") or "")
     grade_matched = our.get("grade_matched")
 
-    # 換算：如果鑑定商不是 PSA，把 PSA 價格打折
+    # Conversion: if the grader isn't PSA, discount the PSA price
     ext = ext_raw
     converted = False
     if ext_raw and card_grader and card_grader.upper() != "PSA" and grade_matched == "PSA 10":

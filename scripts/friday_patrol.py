@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-friday_patrol.py — 週五限量卡機開放窗口「保險巡檢」（08:00–10:00 UTC）。
+friday_patrol.py — "insurance patrol" for the Friday limited-pool open window (08:00–10:00 UTC).
 
-機器時區是 PDT，不靠 launchd 本地日曆（易時區錯位）→ 本腳本自行用 UTC 判窗口：
-只在「週五 08:00–10:00 UTC」動作，其餘時間立即結束（近乎零成本，可高頻排程）。
+The machine's timezone is PDT; rather than relying on launchd's local calendar (prone to timezone
+misalignment), this script decides the window itself in UTC: it only acts during "Friday 08:00–10:00 UTC"
+and exits immediately otherwise (near-zero cost, so it can be scheduled at high frequency).
 
-窗口內每次巡檢：
-  1) 確認 pool_live_monitor 有在更新（live_pool.db 的 updated_at 夠新）；太舊就 kickstart 重啟。
-  2) 確認 track_pulls_onchain（ai.renaiss.pulls）也活著；太舊就重啟。
-  3) 確認是否已探測到本檔限量池（live_target.json）。
-  4) 只在「狀態變化 / 重啟 / 窗口首次」時發 Telegram，避免洗頻。
+Each patrol within the window:
+  1) Confirm pool_live_monitor is updating (live_pool.db's updated_at is fresh enough); kickstart-restart if too stale.
+  2) Confirm track_pulls_onchain (ai.renaiss.pulls) is alive too; restart if too stale.
+  3) Check whether this week's limited pool has been discovered (live_target.json).
+  4) Only send Telegram on "state change / restart / first patrol of the window" to avoid spam.
 
-排程：launchd ai.renaiss.fridaypatrol，StartInterval=300（每 5 分；窗口外瞬間結束）。
+Schedule: launchd ai.renaiss.fridaypatrol, StartInterval=300 (every 5 min; exits instantly outside the window).
 """
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ STATE = DATA / "friday_patrol_state.json"
 LIVE_DB = DATA / "live_pool.db"
 TARGET = DATA / "live_target.json"
 
-FRESH_LIMIT = 300  # 秒：monitor 更新超過此秒數視為卡住
+FRESH_LIMIT = 300  # seconds: monitor is considered stuck if it hasn't updated within this many seconds
 
 
 def _uid() -> str:
@@ -40,7 +41,7 @@ def _uid() -> str:
 
 def _in_window() -> bool:
     now = datetime.now(timezone.utc)
-    # isoweekday(): 週五=5
+    # isoweekday(): Friday=5
     return now.isoweekday() == 5 and 8 <= now.hour < 10
 
 
@@ -54,7 +55,7 @@ def _mtime_age(p: Path) -> float | None:
 
 
 def _monitor_age() -> float | None:
-    """live_pool.db 最新 pool_meta.updated_at 距今秒數。"""
+    """Seconds since live_pool.db's latest pool_meta.updated_at."""
     if not LIVE_DB.exists():
         return None
     import sqlite3
@@ -94,7 +95,7 @@ def _pool_status() -> dict:
 
 def main() -> int:
     if not _in_window():
-        return 0  # 窗口外：瞬間結束
+        return 0  # outside the window: exit instantly
 
     prev = {}
     if STATE.exists():
@@ -104,12 +105,12 @@ def main() -> int:
             prev = {}
 
     actions = []
-    # 1) monitor 活著嗎？
+    # 1) Is the monitor alive?
     mage = _monitor_age()
     if mage is None or mage > FRESH_LIMIT:
         _kickstart("ai.renaiss.livepool")
         actions.append(f"重啟 livepool（上次更新 {('無' if mage is None else str(int(mage))+'s前')}）")
-    # 2) pulls 追蹤活著嗎？
+    # 2) Is pulls tracking alive?
     pulls_age = _mtime_age(Path.home() / ".hermes" / "logs" / "renaiss-pulls.stdout.log")
     if pulls_age is None or pulls_age > 600:
         _kickstart("ai.renaiss.pulls")
@@ -118,7 +119,7 @@ def main() -> int:
     status = _pool_status()
     now = datetime.now(timezone.utc)
 
-    # 決定要不要發 TG：窗口首次 / 池首次被探測到 / 抽卡數大幅推進 / 有重啟動作
+    # Decide whether to send TG: first patrol of the window / pool first discovered / large jump in pulls / a restart happened
     first_in_window = prev.get("window_date") != now.strftime("%F")
     newly_discovered = status["discovered"] and not prev.get("discovered")
     pulled_jump = status["pulled"] - prev.get("pulled", 0) >= 50

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-限量卡機追蹤器 —— 偵測「每周限量卡機」的開放 / 新增。
+Limited-pack tracker -- detects the opening / appearance of "weekly limited packs."
 
-每周五（或不定期）Renaiss 會開一個 is_limited 的限量卡機，會在 Twitter/Discord
-預告，但鏈上 / API 通常會更早出現。本腳本盯著 open-monitor /api/packs：
+Every Friday (or irregularly), Renaiss opens an is_limited limited pack, teased on Twitter/Discord,
+though it usually shows up on chain / via the API earlier. This script watches open-monitor /api/packs:
 
-偵測事件：
-  - NEW_PACK     ：出現從沒見過的 slug（全新卡機，含限量）。
-  - LIMITED_OPEN ：某個 is_limited 卡機從「售罄」變成「開放中」(is_sold_out 1→0)
-                   或剩餘數從 0 變正 → 限量場開抽了。
-  - NEW_S_PULL   ：限量卡機抽出新的 S 卡（last_s_token_id 改變）。
+Detected events:
+  - NEW_PACK     : a never-before-seen slug appears (a brand-new pack, limited or not).
+  - LIMITED_OPEN : an is_limited pack goes from "sold out" to "open" (is_sold_out 1->0)
+                   or its remaining count goes from 0 to positive -> the limited drop opened.
+  - NEW_S_PULL   : a limited pack pulls a new S card (last_s_token_id changed).
 
-狀態存 data/pack_state.json；事件 append 到 data/limited_events.json。
-偵測到 OPEN/NEW 時透過既有 TelegramAlert 發通知（沒設定就只印出）。
+State is stored in data/pack_state.json; events are appended to data/limited_events.json.
+On OPEN/NEW, a notification is sent via the existing TelegramAlert (just printed if not configured).
 """
 from __future__ import annotations
 
@@ -47,10 +47,10 @@ def _load_json(path: Path, default):
 
 
 def _capture_content(names: set[str]) -> None:
-    """偵測到新/開放限量卡機時，立刻抓一次該卡機全池卡表寫入 pack_content。
-    限量卡機的 countdown / 開放窗口只有數小時，等 6h 排程的 packgrab 常整台錯過，
-    導致 /api/new-pack 永遠抓不到 countdown 而 fallback。這裡即時補抓一版。
-    以 name 對應（tRPC cardPack.getAll 的 slug 欄位為 None，只有 id/name 可靠）。"""
+    """When a new/opened limited pack is detected, immediately grab its full pack card list into pack_content.
+    A limited pack's countdown / open window lasts only a few hours, so the 6h-scheduled packgrab often misses
+    it entirely, leaving /api/new-pack unable to catch the countdown and forcing a fallback. This grabs a version on the spot.
+    Matched by name (tRPC cardPack.getAll's slug field is None; only id/name are reliable)."""
     if not names:
         return
     try:
@@ -102,14 +102,14 @@ def main() -> int:
         old = prev.get(slug)
 
         if old is None:
-            # 全新卡機（首跑時別狂報，只有 state 已存在時才當 NEW）
+            # Brand-new pack (don't spam on the first run; only treat as NEW when state already exists)
             if prev:
                 new_events.append({"ts": now, "type": "NEW_PACK", "slug": slug,
                                    "name": st["name"], "is_limited": st["is_limited"],
                                    "remaining": st["remaining"]})
             continue
 
-        # 限量場開抽：售罄→開放，或剩餘 0→正
+        # Limited drop opened: sold out -> open, or remaining 0 -> positive
         opened = (old.get("is_sold_out") and not st["is_sold_out"]) or \
                  ((old.get("remaining") or 0) <= 0 < (st["remaining"] or 0))
         if st["is_limited"] and opened:
@@ -117,7 +117,7 @@ def main() -> int:
                                "name": st["name"], "remaining": st["remaining"],
                                "platform_ev_usd": st["platform_ev_usd"]})
 
-        # 限量場新 S 卡
+        # New S card in a limited drop
         if st["is_limited"] and st["last_s_token_id"] and \
            st["last_s_token_id"] != old.get("last_s_token_id"):
             new_events.append({"ts": now, "type": "NEW_S_PULL", "slug": slug,
@@ -129,13 +129,13 @@ def main() -> int:
         events.extend(new_events)
         EVENTS.write_text(json.dumps(events[-500:], indent=2, ensure_ascii=False))
 
-    # 新/開放限量卡機 → 立刻補抓一版全池卡表，別等 6h 排程錯過 countdown 窗口
+    # New/opened limited pack -> grab a full pack card list right away; don't let the 6h schedule miss the countdown window
     capture = {e["name"] for e in new_events
                if e["type"] == "LIMITED_OPEN"
                or (e["type"] == "NEW_PACK" and e.get("is_limited"))}
     _capture_content(capture)
 
-    # 通知（OPEN / NEW_PACK 才推播；NEW_S_PULL 只記錄）
+    # Notify (only OPEN / NEW_PACK are pushed; NEW_S_PULL is only recorded)
     alertable = [e for e in new_events if e["type"] in ("LIMITED_OPEN", "NEW_PACK")]
     if alertable:
         lines = ["🎰 *限量卡機動態*"]

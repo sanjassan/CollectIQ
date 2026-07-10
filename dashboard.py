@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Web Dashboard for Renaiss EV Monitor v2
-整合 EV 計算、Pack 監控、外部比價功能
+Combines EV calculation, pack monitoring, and external price comparison.
 """
 
 import json
@@ -32,14 +32,14 @@ def index():
 
 @app.route("/holdings")
 def holdings_page():
-    """鏈上持有頁：每張卡的圖片 + 資訊 + 當前存放位置（持有者）"""
+    """On-chain holdings page: each card's image + info + current location (holder)."""
     return render_template("holdings.html")
 
 
 @app.route("/api/holdings")
 def api_holdings():
-    """回傳 data/holdings.json（每個 token 的當前持有者 + 卡片資訊）。
-    若檔案不存在則即時建立。可加 ?identified=1 只回傳已識別卡片。"""
+    """Return data/holdings.json (current holder + card info for each token).
+    Builds the file on the fly if it does not exist. Add ?identified=1 to return only identified cards."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "holdings.json")
     if not os.path.exists(path):
         try:
@@ -66,9 +66,9 @@ _POOL_SLUG = {
 
 @app.route("/api/pulls")
 def api_pulls():
-    """鏈上抽卡紀錄（onchain_pulls.db）：每筆 = 哪台卡機(pool)、哪張卡、FMV、何時被抽走、抽走的錢包。
-    參數：?min_fmv=（只看高於此 FMV，預設 0）、?limit=（預設 200）、?pool=slug（omega/eden/...）。
-    回傳含 sync 進度（最後同步區塊時間、落後鏈頭多少），讓前端標示是否即時。"""
+    """On-chain pull records (onchain_pulls.db): each row = which pack (pool), which card, FMV, when it was pulled, and the pulling wallet.
+    Params: ?min_fmv= (only show pulls above this FMV, default 0), ?limit= (default 200), ?pool=slug (omega/eden/...).
+    Returns sync progress (last synced block time, how far behind chain head) so the frontend can flag whether it's live."""
     import sqlite3
     base = os.path.dirname(os.path.abspath(__file__))
     db = os.path.join(base, "data", "onchain_pulls.db")
@@ -108,9 +108,9 @@ def api_pulls():
 
     last_block  = _state("last_block")
     head_block  = _state("head_block")
-    synced_ts   = _state("synced_ts")     # 本輪 wall-clock：多久前確認追到 head
+    synced_ts   = _state("synced_ts")     # this round's wall-clock: how long ago we confirmed catching up to head
     synced_block = _state("synced_block") or last_block
-    # 真實同步落後 = head 與已同步區塊差；synced_ts 老代表爬蟲本身停了。
+    # Real sync lag = head minus last synced block; a stale synced_ts means the crawler itself stopped.
     sync_behind_blocks = (head_block - synced_block) if (head_block and synced_block) else None
     conn.close()
     pulls = []
@@ -129,21 +129,21 @@ def api_pulls():
         })
     return jsonify({
         "pulls": pulls,
-        "last_block_time": last_block_time,   # 最近一次「抽卡」的時間（非同步延遲！）
+        "last_block_time": last_block_time,   # time of the most recent "pull" (not the sync delay!)
         "last_block": last_block,
-        "head_block": head_block,             # 爬蟲上輪看到的鏈頭
+        "head_block": head_block,             # chain head the crawler saw last round
         "synced_block": synced_block,
-        "synced_ts": synced_ts,               # 爬蟲上輪 wall-clock（判斷爬蟲是否還活著）
-        "sync_behind_blocks": sync_behind_blocks,  # 真實同步落後區塊數（≈0 = 即時）
+        "synced_ts": synced_ts,               # crawler's last-round wall-clock (tells whether the crawler is still alive)
+        "sync_behind_blocks": sync_behind_blocks,  # real number of blocks behind (≈0 = live)
         "min_fmv": min_fmv,
     })
 
 
 @app.route("/api/marketplace")
 def api_marketplace():
-    """市場上目前掛單的卡（data/marketplace_listed.json）。
-    每張含 名稱 / 圖片 / 掛單價 ask_price / FMV / 連到 Renaiss 商店頁的連結。
-    可加 ?limit=N（預設 500）、?sort=ask|fmv|discount（折價 = fmv/ask 由高到低）。"""
+    """Cards currently listed on the market (data/marketplace_listed.json).
+    Each includes name / image / ask_price / FMV / a link to the Renaiss store page.
+    Add ?limit=N (default 500), ?sort=ask|fmv|discount (discount = fmv/ask, high to low)."""
     base = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(base, "data", "marketplace_listed.json")
     if not os.path.exists(path):
@@ -172,13 +172,13 @@ def api_marketplace():
 
 @app.route("/api/pack-ev")
 def api_pack_ev():
-    """每個卡機的 官方EV / 經驗EV / 我們自算EV（外部校正後）+ 限量旗標。"""
+    """Per-pack official EV / empirical EV / our own computed EV (externally calibrated) + limited-edition flag."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "pack_data.json")
     return jsonify(pack_ev.load_and_analyze(path))
 
 
 def _limited_events():
-    """track_limited_packs.py 產生的限量卡機偵測事件（含 ts / slug / remaining）。"""
+    """Limited-pack detection events produced by track_limited_packs.py (includes ts / slug / remaining)."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "limited_events.json")
     if not os.path.exists(path):
         return []
@@ -191,9 +191,9 @@ def _limited_events():
 
 
 def _pack_tiers_by_name(conn, name):
-    """依 pack_name 從 pack_content 取『最新一版』級距組成。
-    以 updated_at（最後刷新）挑最新版本，而非 captured_at（首見時間）。
-    回傳 (pack_id, total_cards, tiers, our_ev, featured)。找不到回傳 (None, 0, {}, None, None)。"""
+    """Get the 'latest version' tier composition from pack_content by pack_name.
+    Picks the newest version by updated_at (last refresh) rather than captured_at (first seen).
+    Returns (pack_id, total_cards, tiers, our_ev, featured). Returns (None, 0, {}, None, None) if not found."""
     row = conn.execute(
         "SELECT pack_id FROM pack_content WHERE pack_name=? "
         "ORDER BY updated_at DESC LIMIT 1", (name,)).fetchone()
@@ -210,7 +210,7 @@ def _pack_tiers_by_name(conn, name):
         tiers[t["tier"]] = {"pct": round(t["slots"]/total*100, 1) if total else 0,
                             "n_cards": t["slots"], "avg": t["avg"],
                             "min": t["min"], "max": t["max"]}
-    # 自算EV：整池 buyback 的加權平均（每抽一次的期望官方買回值）
+    # Our computed EV: weighted average of the whole pool's buyback (expected official buyback value per pull)
     our_ev = conn.execute(
         "SELECT ROUND(AVG(renaiss_buyback_usd),2) FROM pack_content WHERE pack_id=?",
         (pid,)).fetchone()[0]
@@ -221,11 +221,11 @@ def _pack_tiers_by_name(conn, name):
 
 @app.route("/api/new-pack")
 def api_new_pack():
-    """本週限量卡機。取用順序：
-      ① live API 中開放/倒數中的 limited 卡機（is_open=true）；
-      ② limited_events.json 最近偵測到的 limited 卡機（可能已結束，is_open=false）；
-      ③ 空狀態（empty=true）—— 不再退回寫死的 06/26 靜態檔。
-    級距一律以 pack_content 依 updated_at 取最新版本補上。"""
+    """This week's limited pack. Resolution order:
+      1) Open/counting-down limited pack from the live API (is_open=true);
+      2) Most recently detected limited pack from limited_events.json (may have ended, is_open=false);
+      3) Empty state (empty=true) -- no longer falls back to the hardcoded 06/26 static file.
+    Tiers are always filled in from the newest pack_content version by updated_at."""
     from datetime import timezone as _tz
     try:
         packs = renaiss_api.get_packs(include_inactive=True)
@@ -239,7 +239,7 @@ def api_new_pack():
     remaining = None
     detected_at = None
 
-    # ① 開放/倒數中的限量卡機（理想狀態）
+    # 1) Open/counting-down limited pack (ideal case)
     live_open = [p for p in packs
                  if p.get("packType") == "limited"
                  and p.get("stage") in ("countdown", "active")]
@@ -247,7 +247,7 @@ def api_new_pack():
         chosen = live_open[0]
         is_open = True
 
-    # ② 最近偵測到的限量卡機（即使已 archived，也比凍在 06/26 誠實）
+    # 2) Most recently detected limited pack (even if archived, more honest than freezing on 06/26)
     if chosen is None:
         events = sorted((e for e in _limited_events() if e.get("is_limited")),
                         key=lambda e: e.get("ts", 0), reverse=True)
@@ -261,7 +261,7 @@ def api_new_pack():
                 "packType": "limited", "stage": "archived"}
             is_open = chosen.get("stage") in ("countdown", "active")
 
-    # ③ 空狀態：目前真的沒有開放中/近期限量卡機
+    # 3) Empty state: there really is no open/recent limited pack right now
     if chosen is None:
         return jsonify({"empty": True, "note": "目前無開放中限量卡機"})
 
@@ -297,9 +297,9 @@ def api_new_pack():
 
 @app.route("/api/freshness")
 def api_freshness():
-    """各資料來源的新鮮度徽章來源：資料多舊、爬蟲是否還活著。
-    每個來源回傳 ts(ISO) / age_sec / stale；stale=true 代表超過該來源容忍門檻。
-    這是 06/26 卡住那類問題的通用防呆——頁面過期就該標紅，而非默默顯示舊資料。"""
+    """Data source for the freshness badges: how old each source is and whether its crawler is still alive.
+    Each source returns ts(ISO) / age_sec / stale; stale=true means it exceeded that source's tolerance threshold.
+    This is a general safeguard for the 06/26-style stuck problem -- an expired page should flag red rather than silently show stale data."""
     import time as _time
     now = _time.time()
     sources = {}
@@ -315,7 +315,7 @@ def api_freshness():
             src.update(extra)
         sources[name] = src
 
-    # 1) pack_content 目錄抓取時間（core.db meta）—— 本週限量卡機/卡機總覽的鮮度
+    # 1) pack_content catalog fetch time (core.db meta) -- freshness of this week's limited pack / pack overview
     grabbed_epoch = None
     conn = _core_db()
     if conn:
@@ -326,9 +326,9 @@ def api_freshness():
         except Exception:
             pass
         conn.close()
-    _emit("pack_catalog", grabbed_epoch, 8 * 3600)   # 6h 排程 → 8h 容忍
+    _emit("pack_catalog", grabbed_epoch, 8 * 3600)   # 6h schedule -> 8h tolerance
 
-    # 2) 鏈上同步（onchain_pulls.db state.synced_ts / sync_behind_blocks）
+    # 2) On-chain sync (onchain_pulls.db state.synced_ts / sync_behind_blocks)
     synced_ts = sync_behind = None
     ocdb = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "onchain_pulls.db")
     if os.path.exists(ocdb):
@@ -344,15 +344,15 @@ def api_freshness():
         except Exception:
             pass
         c.close()
-    _emit("onchain_sync", synced_ts, 900, {"sync_behind_blocks": sync_behind})  # 300s → 15m 容忍
+    _emit("onchain_sync", synced_ts, 900, {"sync_behind_blocks": sync_behind})  # 300s -> 15m tolerance
 
-    # 3) 限量卡機事件（最後一次偵測到新/開放限量卡機）
+    # 3) Limited pack events (last time a new/open limited pack was detected)
     last_ev = None
     for e in _limited_events():
         ts = e.get("ts")
         if ts:
             last_ev = max(last_ev or 0, ts)
-    _emit("limited_events", last_ev, 7 * 24 * 3600)  # 週更 → 一週容忍
+    _emit("limited_events", last_ev, 7 * 24 * 3600)  # weekly updates -> one-week tolerance
 
     return jsonify({
         "now": datetime.utcnow().isoformat() + "Z",
@@ -363,8 +363,8 @@ def api_freshness():
 
 @app.route("/healthz")
 def healthz():
-    """輕量存活探針，給外部 watchdog（scripts/healthcheck.py）用。
-    只確認 Flask 活著 + core.db 可開；不打外部 API，維持毫秒級回應。"""
+    """Lightweight liveness probe for an external watchdog (scripts/healthcheck.py).
+    Only confirms Flask is alive + core.db can open; hits no external API, keeping responses at millisecond latency."""
     ok = True
     db_ok = False
     conn = _core_db()
@@ -387,15 +387,15 @@ def healthz():
 
 @app.route("/limited-history")
 def limited_history_page():
-    """限量卡機歷史時間軸（誰在何時開放 / 新增 / 抽出 S 卡）。"""
+    """Limited pack history timeline (who opened / added / pulled an S card, and when)."""
     return render_template("limited_history.html")
 
 
 @app.route("/api/limited-history")
 def api_limited_history():
-    """limited_events.json 的時間軸視圖：新到舊排序，附 ISO 時間與人類可讀類型。
-    這是 06/26 那類「本週限量卡機卡住」問題的稽核面板——把每次偵測到的限量事件
-    攤開，就能一眼看出上週到底開了哪些場、有沒有漏抓。"""
+    """Timeline view of limited_events.json: sorted newest to oldest, with ISO timestamps and human-readable types.
+    This is the audit panel for the 06/26-style "this week's limited pack is stuck" problem -- laying out every
+    detected limited event makes it easy to see at a glance which sessions opened last week and whether any were missed."""
     LABELS = {"NEW_PACK": "新卡機", "LIMITED_OPEN": "限量開放", "NEW_S_PULL": "抽出 S 卡"}
     events = []
     for e in _limited_events():
@@ -420,7 +420,7 @@ def api_limited_history():
 
 @app.route("/api/pool-addresses")
 def api_pool_addresses():
-    """鏈上卡機合約地址（已知 + 疑似新卡機候選）。discover_pools.py 產生。"""
+    """On-chain pack contract addresses (known + suspected new-pack candidates). Produced by discover_pools.py."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "pool_addresses.json")
     if not os.path.exists(path):
         return jsonify({"known": [], "candidates": [], "note": "尚未產生，請跑 scripts/discover_pools.py"})
@@ -430,17 +430,17 @@ def api_pool_addresses():
 
 @app.route("/api/limited-events")
 def api_limited_events():
-    """限量卡機事件流（開放/新增/新S卡）。track_limited_packs.py 產生。"""
+    """Limited pack event stream (open/added/new S card). Produced by track_limited_packs.py."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "limited_events.json")
     if not os.path.exists(path):
         return jsonify([])
     with open(path, encoding="utf-8") as f:
         events = json.load(f)
-    return jsonify(events[-100:][::-1])  # 最新在前
+    return jsonify(events[-100:][::-1])  # newest first
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  LIVE POOL TRACKER — 限量卡機開放窗口即時獎池追蹤（data/live_pool.db）
+#  LIVE POOL TRACKER — real-time prize-pool tracking during a limited pack's open window (data/live_pool.db)
 # ═══════════════════════════════════════════════════════════════════════════════
 def _live_db():
     import sqlite3 as _sq
@@ -453,7 +453,7 @@ def _live_db():
 
 
 def _active_pool_row(conn):
-    """挑最新更新的池（開放中/最近追蹤的）。"""
+    """Pick the most recently updated pool (currently open / most recently tracked)."""
     return conn.execute(
         "SELECT * FROM pool_meta ORDER BY updated_at DESC LIMIT 1"
     ).fetchone()
@@ -461,13 +461,13 @@ def _active_pool_row(conn):
 
 @app.route("/live")
 def live_page():
-    """限量卡機開放窗口即時獎池追蹤面板（暫時性高資訊量 → 獨立頁）。"""
+    """Real-time prize-pool tracking panel for a limited pack's open window (temporarily high-density -> its own page)."""
     return render_template("live.html")
 
 
 @app.route("/api/live/pool")
 def api_live_pool():
-    """目標池狀態彙整 + 倒數。可 ?address= 指定池。"""
+    """Target pool status summary + countdown. Use ?address= to specify a pool."""
     conn = _live_db()
     if not conn:
         return jsonify({"available": False, "note": "尚未產生，請跑 scripts/pool_live_monitor.py"})
@@ -478,17 +478,17 @@ def api_live_pool():
         conn.close()
         return jsonify({"available": False})
     d = dict(row)
-    # 大獎統計
+    # Big-prize stats
     pool = d["address"]
     d["big_in_pool"] = conn.execute(
         "SELECT COUNT(*) FROM tokens WHERE pool=? AND is_big=1 AND status='in_pool'", (pool,)).fetchone()[0]
     d["big_pulled"] = conn.execute(
         "SELECT COUNT(*) FROM tokens WHERE pool=? AND is_big=1 AND status='pulled'", (pool,)).fetchone()[0]
-    # 池清單（供切換）
+    # Pool list (for switching)
     pools = [dict(r) for r in conn.execute(
         "SELECT address, name, slug, loaded, pulled, remaining, updated_at FROM pool_meta ORDER BY updated_at DESC").fetchall()]
     conn.close()
-    # 倒數（activeFrom）
+    # Countdown (activeFrom)
     d["countdown_seconds"] = None
     if d.get("active_from"):
         try:
@@ -504,7 +504,7 @@ def api_live_pool():
 
 @app.route("/api/live/pulls")
 def api_live_pulls():
-    """最近抽卡事件流：哪張卡、哪個錢包抽走、時間、FMV。?address= ?limit=60 ?kind=pull|recycle|burn|all"""
+    """Recent pull event stream: which card, which wallet pulled it, time, FMV. ?address= ?limit=60 ?kind=pull|recycle|burn|all"""
     conn = _live_db()
     if not conn:
         return jsonify({"events": []})
@@ -528,7 +528,7 @@ def api_live_pulls():
 
 @app.route("/api/live/buyers")
 def api_live_buyers():
-    """抽最多的錢包（鯨魚）。?address= ?limit=20"""
+    """Wallets that pulled the most (whales). ?address= ?limit=20"""
     conn = _live_db()
     if not conn:
         return jsonify({"buyers": []})
@@ -546,7 +546,7 @@ def api_live_buyers():
 
 @app.route("/api/live/big-prizes")
 def api_live_big_prizes():
-    """大獎（FMV≥$300）：已被抽走 vs 仍在池內。?address="""
+    """Big prizes (FMV≥$300): already pulled vs still in the pool. ?address="""
     conn = _live_db()
     if not conn:
         return jsonify({"pulled": [], "in_pool": []})
@@ -566,16 +566,16 @@ def api_live_big_prizes():
 
 @app.route("/api/live/ev")
 def api_live_ev():
-    """即時獎池 EV 反推 + 每張卡 FMV 對照（Renaiss FMV vs 真實市場 index_price）。
+    """Live prize-pool EV back-calculation + per-card FMV comparison (Renaiss FMV vs real-market index_price).
 
-    回傳：
-      remaining_ev_market / remaining_ev_renaiss  剩餘池每抽期望值（市場價 / Renaiss 價）
-      pulled_ev_*                                 已抽出的平均值
-      ev_ratio_live = remaining_ev_market / price 現在買還值不值（>1 值回票價）
-      easter_eggs   幸運卡價（Renaiss 標低、市場高 ≥1.5x）→ 仍在池，可期待
-      data_errors   疑似輸入錯誤（Renaiss ≫ 市場 3x 且信心低）→ 別信 Renaiss FMV
-      recycled_gems 被回收回池的高市值卡（避免回收錯誤 / 撿漏）
-      coverage      已有真實市場價的比例
+    Returns:
+      remaining_ev_market / remaining_ev_renaiss  expected value per pull for the remaining pool (market price / Renaiss price)
+      pulled_ev_*                                 average of what's already been pulled
+      ev_ratio_live = remaining_ev_market / price whether buying now is still worth it (>1 = worth the price)
+      easter_eggs   lucky cards (Renaiss priced low, market ≥1.5x higher) -> still in pool, something to hope for
+      data_errors   likely input errors (Renaiss ≫ market by 3x and low confidence) -> don't trust the Renaiss FMV
+      recycled_gems high-market-value cards recycled back into the pool (spot recycling mistakes / bargains)
+      coverage      fraction that already has a real market price
     """
     import sqlite3 as _sq
     conn = _live_db()
@@ -591,7 +591,7 @@ def api_live_ev():
     conn.close()
     meta = dict(meta) if meta else {}
 
-    # 卡機價格（值不值回票價要用）
+    # Pack price (needed to judge whether it's worth the cost)
     price = None
     try:
         for p in renaiss_api.get_packs(include_inactive=True):
@@ -601,7 +601,7 @@ def api_live_ev():
     except Exception:
         pass
 
-    # join collectiq.db 取真實市場價 index_price_usd + 圖片
+    # Join collectiq.db to get real market price index_price_usd + image
     market = {}
     cdb_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "collectiq.db")
     ids = [t["token_id"] for t in toks]
@@ -668,8 +668,8 @@ def api_live_ev():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  CORE LEDGER — 統一核心帳本（data/collectiq_core.db）
-#  事件溯源後的成果：真持有者 / 幸運卡 / 獎勵進度 / 單卡完整轉移史
+#  CORE LEDGER — unified core ledger (data/collectiq_core.db)
+#  Output of event sourcing: true holders / lucky cards / reward progress / full per-card transfer history
 # ═══════════════════════════════════════════════════════════════════════════════
 def _core_db():
     import sqlite3 as _sq
@@ -683,8 +683,8 @@ def _core_db():
 
 @app.route("/api/core/lucky")
 def api_core_lucky():
-    """幸運卡（復活蛋）：真實市場價遠高於 Renaiss FMV，並附「現在在誰手中」。
-    參數：?min_luck=1.5 ?limit=50"""
+    """Lucky cards (easter eggs): real market price far above Renaiss FMV, plus "who holds it now".
+    Params: ?min_luck=1.5 ?limit=50"""
     conn = _core_db()
     if not conn:
         return jsonify({"available": False, "note": "尚未建立 collectiq_core.db"})
@@ -708,7 +708,7 @@ def api_core_lucky():
 
 @app.route("/api/core/holders")
 def api_core_holders():
-    """持有者排行 + 獎勵進度（伊布全款完成度）。?limit=30"""
+    """Holder leaderboard + reward progress (Eevee full-set completion). ?limit=30"""
     conn = _core_db()
     if not conn:
         return jsonify({"available": False})
@@ -740,7 +740,7 @@ def api_core_holders():
 
 @app.route("/api/core/rewards")
 def api_core_rewards():
-    """獎勵狀態彙整：伊布全款 / 連號 / SBT。"""
+    """Reward status summary: Eevee full set / serial run / SBT."""
     conn = _core_db()
     if not conn:
         return jsonify({"available": False})
@@ -767,7 +767,7 @@ def api_core_rewards():
 
 @app.route("/api/core/token/<token_id>")
 def api_core_token(token_id):
-    """單卡的完整鏈上轉移史（誰抽走、如何轉手、現在在誰手中）。"""
+    """A card's full on-chain transfer history (who pulled it, how it changed hands, who holds it now)."""
     conn = _core_db()
     if not conn:
         return jsonify({"available": False})
@@ -792,9 +792,9 @@ def api_core_token(token_id):
 
 @app.route("/api/core/packs")
 def api_core_packs():
-    """未開／已開抽卡機總覽（pack_content 快照）。
-    每台卡機：slot 總數、distinct 卡數、buyback 區間、最高價卡縮圖、有無市價。
-    ?stage=countdown 只看即將開的。"""
+    """Overview of unopened / opened packs (pack_content snapshot).
+    Per pack: total slots, distinct card count, buyback range, top-price card thumbnail, whether a market price exists.
+    ?stage=countdown shows only the ones about to open."""
     conn = _core_db()
     if not conn:
         return jsonify({"available": False, "note": "尚未建立 collectiq_core.db"})
@@ -831,15 +831,15 @@ def api_core_packs():
 
 @app.route("/api/core/pack/<pack_id>")
 def api_core_pack_cards(pack_id):
-    """單台卡機內所有卡（distinct 物理卡，附 slot 權重 / buyback / 市價 / luck）。
-    ?min_luck= 只看藏寶卡。"""
+    """All cards in a single pack (distinct physical cards, with slot weight / buyback / market price / luck).
+    ?min_luck= shows only treasure cards."""
     conn = _core_db()
     if not conn:
         return jsonify({"available": False})
     min_luck = request.args.get("min_luck")
-    # luck 必須與所顯示的 buyback 同源：同一 item_id 可跨多 tier/slot，
-    # 各 slot 官方買回價不同。取 MAX(buyback)（最保守，luck 最低）並用同一值
-    # 現算 luck，避免「MAX(buyback) 配 MAX(luck)」湊出不自洽的假高值。
+    # luck must come from the same source as the displayed buyback: one item_id can span multiple tiers/slots,
+    # each with a different official buyback price. Take MAX(buyback) (most conservative, lowest luck) and compute
+    # luck from that same value, to avoid pairing MAX(buyback) with MAX(luck) into an inconsistent, inflated fake value.
     luck_expr = "ROUND(MAX(market_price_usd) / NULLIF(MAX(renaiss_buyback_usd), 0), 4)"
     having = f"HAVING {luck_expr} >= ?" if min_luck else ""
     args = [pack_id]
@@ -875,8 +875,8 @@ def api_core_pack_cards(pack_id):
 
 @app.route("/api/core/pack-tiers/<pack_id>")
 def api_core_pack_tiers(pack_id):
-    """單台卡機的級距組成（TOP/S/A/B/C/D）：每級 slot 數、佔比、buyback 區間、代表卡。
-    給「這台卡機每個級距裝了什麼」用。pack_id 可傳 'countdown' 取當前倒數中卡機。"""
+    """A single pack's tier composition (TOP/S/A/B/C/D): per-tier slot count, share, buyback range, representative cards.
+    For seeing "what each tier of this pack contains". pack_id may be 'countdown' to get the currently counting-down pack."""
     conn = _core_db()
     if not conn:
         return jsonify({"available": False})
@@ -921,7 +921,7 @@ def api_core_pack_tiers(pack_id):
 
 @app.route("/api/core/pack-gems")
 def api_core_pack_gems():
-    """跨卡機藏寶卡榜：pack_content 內 luck_value 最高者（含尚未開的卡機）。
+    """Cross-pack treasure-card leaderboard: highest luck_value in pack_content (including unopened packs).
     ?min_luck=1.5 ?limit=60"""
     conn = _core_db()
     if not conn:
@@ -945,21 +945,21 @@ def api_core_pack_gems():
 
 @app.route("/intelligence")
 def intelligence_page():
-    """CollectIQ Price Intelligence — FMV 落差分析 / 鯨魚錢包 / True EV。"""
+    """CollectIQ Price Intelligence — FMV gap analysis / whale wallets / True EV."""
     return render_template("intelligence.html")
 
 
 @app.route("/api/intelligence/fmv-gap")
 def api_fmv_gap():
     """
-    CollectIQ 核心：Renaiss FMV vs 真實市場價落差表。
-    參數：?limit=500 ?min_gap=0 ?max_gap= ?confidence=high|medium|low
-    同時回傳 stats（彙整統計）。
+    CollectIQ core: Renaiss FMV vs real-market price gap table.
+    Params: ?limit=500 ?min_gap=0 ?max_gap= ?confidence=high|medium|low
+    Also returns stats (aggregate statistics).
     """
     import sqlite3 as _sq
     db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "collectiq.db")
 
-    # Fallback：DB 還沒建好就讀 fmv_gap.json
+    # Fallback: if the DB isn't built yet, read fmv_gap.json
     if not os.path.exists(db):
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "fmv_gap.json")
         if os.path.exists(path):
@@ -1020,7 +1020,7 @@ def api_fmv_gap():
 
 @app.route("/api/intelligence/wallets")
 def api_intelligence_wallets():
-    """CollectIQ 鯨魚錢包彙整（持有 Renaiss tokens 的錢包統計）。"""
+    """CollectIQ whale-wallet summary (stats for wallets holding Renaiss tokens)."""
     import sqlite3 as _sq
     db  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "collectiq.db")
     alt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "wallet_summary.json")
@@ -1058,7 +1058,7 @@ def api_intelligence_wallets():
 
 @app.route("/api/intelligence/token/<token_id>")
 def api_intelligence_token(token_id):
-    """單張 token 的完整 CollectIQ 分析（FMV 比對 + cert 圖片 + 持有者）。"""
+    """Full CollectIQ analysis for a single token (FMV comparison + cert image + holder)."""
     import sqlite3 as _sq
     db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "collectiq.db")
     if not os.path.exists(db):
@@ -1073,7 +1073,7 @@ def api_intelligence_token(token_id):
 
 @app.route("/api/intelligence/rebuild", methods=["POST"])
 def api_intelligence_rebuild():
-    """觸發背景重建 collectiq.db（只補查尚未查過的 cert）。"""
+    """Trigger a background rebuild of collectiq.db (only queries certs not yet looked up)."""
     import subprocess as _sp
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "build_universe.py")
     _sp.Popen(
@@ -1086,7 +1086,7 @@ def api_intelligence_rebuild():
 
 @app.route("/api/build/status")
 def api_build_status():
-    """CollectIQ 背景 build 進度（DB 統計 + log tail + 是否正在跑）。"""
+    """CollectIQ background build progress (DB stats + log tail + whether it's running)."""
     import sqlite3 as _sq, subprocess as _sp
     db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "collectiq.db")
     # Check if build process is running
@@ -1149,13 +1149,13 @@ def api_build_status():
 @app.route("/verify")
 @app.route("/compare")
 def compare_page():
-    """價格驗證頁：Renaiss 內部價(FMV/掛單) vs 我們自抓的外部公開市場價。"""
+    """Price verification page: Renaiss internal price (FMV/listing) vs our independently scraped public market price."""
     return render_template("compare.html")
 
 
 @app.route("/api/trust-score")
 def api_trust_score():
-    """CollectIQ 平台信任分數 — 一個 API 回傳所有 dashboard 需要的關鍵數字。"""
+    """CollectIQ platform trust score — one API returning all the key numbers the dashboard needs."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "comparison.json")
     if not os.path.exists(path):
         return jsonify({"error": "comparison.json not built yet"})
@@ -1209,9 +1209,9 @@ def api_trust_score():
 
 @app.route("/api/comparison")
 def api_comparison():
-    """回傳 data/comparison.json（build_comparison.py 產生）。
+    """Return data/comparison.json (produced by build_comparison.py).
 
-    支援 ?flag=renaiss_high 篩選；?min_delta=20 只看絕對偏差 >=20% 的。
+    Supports ?flag=renaiss_high filtering; ?min_delta=20 shows only rows with absolute deviation >=20%.
     """
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "comparison.json")
     if not os.path.exists(path):
@@ -1237,10 +1237,10 @@ def api_comparison():
 
 @app.route("/api/our-price")
 def api_our_price():
-    """即時查單卡的「我們自己抓」的外部價（不碰 Renaiss 來源）。
+    """Live lookup of a single card's "self-scraped" external price (never touches Renaiss sources).
 
-    ?token_id=... 會先在 marketplace_all.json 找到該卡再比價；
-    或直接帶 ?name=&set=&char=&number=&grader=&grade= 自訂查詢。
+    ?token_id=... first finds the card in marketplace_all.json, then compares prices;
+    or pass ?name=&set=&char=&number=&grader=&grade= directly for a custom query.
     """
     base = os.path.dirname(os.path.abspath(__file__))
     token_id = request.args.get("token_id")
@@ -1337,16 +1337,16 @@ def api_update_pool():
 
 @app.route("/api/pack-data")
 def api_pack_data():
-    """Fetch pack data — 優先用 Renaiss CLI 即時資料，fallback 到本地 JSON。"""
+    """Fetch pack data — prefer live data from the Renaiss CLI, fall back to local JSON."""
     try:
-        # 嘗試 CLI 即時資料
+        # Try live CLI data
         live_packs = renaiss_api.get_all_packs_ev()
         if live_packs:
             return jsonify({"results": live_packs, "source": "renaiss-cli-live"})
     except Exception as e:
         print(f"[WARN] CLI pack data failed, falling back: {e}")
 
-    # Fallback：本地 JSON → MOCK
+    # Fallback: local JSON -> MOCK
     pack_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "pack_data.json")
     loader = LocalPoolDataLoader(pack_data_path)
     pack_data = loader.load_pool_data()
@@ -1359,8 +1359,8 @@ def api_pack_data():
 
 @app.route("/api/packs/live")
 def api_packs_live():
-    """Renaiss 卡機資料。
-    ?all=1 回傳全部 (含 archived 限量 + coming_soon)；預設只回傳 active。
+    """Renaiss pack data.
+    ?all=1 returns everything (including archived limited + coming_soon); defaults to active only.
     """
     try:
         show_all = request.args.get("all", "0") == "1"
@@ -1369,7 +1369,7 @@ def api_packs_live():
         for p in all_packs:
             slug = p.get("slug", "")
             stage = p.get("stage", "")
-            # coming_soon / archived → 只回傳基本資料，不呼叫 compute_pack_ev（會 404）
+            # coming_soon / archived -> return basic data only, don't call compute_pack_ev (would 404)
             if stage in ("archived", "coming_soon"):
                 if not show_all:
                     continue
@@ -1389,7 +1389,7 @@ def api_packs_live():
                     "tier_distribution": {},
                 })
             else:
-                # active perpetual → 完整 EV 計算
+                # active perpetual -> full EV calculation
                 ev = renaiss_api.compute_pack_ev(slug)
                 ev["supply_hint"] = p.get("supply_hint")
                 results.append(ev)
@@ -1406,7 +1406,7 @@ def api_packs_live():
 
 @app.route("/api/packs/live/<slug>")
 def api_pack_live_detail(slug):
-    """單一卡機完整即時資料（含最近 20+ 筆開包 fmv/tier 列表）。"""
+    """Full live data for a single pack (including the last 20+ opened-pack fmv/tier entries)."""
     try:
         detail = renaiss_api.get_pack_detail(slug)
         ev = renaiss_api.compute_pack_ev(slug)
@@ -1417,7 +1417,7 @@ def api_pack_live_detail(slug):
 
 @app.route("/api/market/search")
 def api_market_search():
-    """Index API 搜尋卡片 — ?q=卡名&limit=10，回傳含 price_usd / grade / spark。"""
+    """Index API card search — ?q=card_name&limit=10, returns price_usd / grade / spark."""
     q = request.args.get("q", "").strip()
     if not q or len(q) < 2:
         return jsonify({"error": "q must be ≥ 2 chars"}), 400
@@ -1431,28 +1431,28 @@ def api_market_search():
 
 @app.route("/api/market/price/<cert>")
 def api_market_price_cert(cert):
-    """Index API 查分級序號（PSA/BGS/CGC cert）→ 卡名 + 即時 FMV。"""
+    """Index API lookup by grading serial (PSA/BGS/CGC cert) -> card name + live FMV."""
     data = renaiss_api.get_graded(cert)
     return jsonify(data)
 
 
 @app.route("/api/market/price-by-id/<rid>")
 def api_market_price_by_rid(rid):
-    """Index API 用 Renaiss tokenId 查卡片即時 FMV。"""
+    """Index API lookup of a card's live FMV by Renaiss tokenId."""
     data = renaiss_api.get_card_by_renaiss_id(rid)
     return jsonify(data)
 
 
 @app.route("/api/market/fmv-series/<rid>")
 def api_market_fmv_series(rid):
-    """Index API 查某張卡的每日 FMV 歷史（用於趨勢圖）。"""
+    """Index API lookup of a card's daily FMV history (for trend charts)."""
     series = renaiss_api.get_card_fmv_series(rid)
     return jsonify({"rid": rid, "series": series})
 
 
 @app.route("/api/trades/live")
 def api_trades_live():
-    """Index API 最近跨平台成交紀錄（snkrdunk 等）。?limit=50"""
+    """Index API recent cross-platform trade records (snkrdunk, etc.). ?limit=50"""
     try:
         limit = max(1, min(200, int(request.args.get("limit", 50))))
     except Exception:
@@ -1463,7 +1463,7 @@ def api_trades_live():
 
 @app.route("/api/index/<game>")
 def api_index_overview(game):
-    """Index API 指數總覽（game = pokemon / one-piece）。"""
+    """Index API index overview (game = pokemon / one-piece)."""
     if game not in ("pokemon", "one-piece"):
         return jsonify({"error": "game must be pokemon or one-piece"}), 400
     data = renaiss_api.get_index_overview(game)
@@ -1472,26 +1472,26 @@ def api_index_overview(game):
 
 @app.route("/api/cache/stats")
 def api_cache_stats():
-    """診斷：API 快取狀態（每個 key 的年齡、是否過期）。"""
+    """Diagnostics: API cache status (age of each key, whether it's expired)."""
     return jsonify(renaiss_api.cache_stats())
 
 
 @app.route("/api/cache/clear", methods=["POST"])
 def api_cache_clear():
-    """強制清除 API 快取（讓下次請求重新抓 CLI/Index API）。"""
+    """Force-clear the API cache (so the next request re-fetches from the CLI/Index API)."""
     renaiss_api.clear_cache()
     return jsonify({"status": "cleared"})
 
 
 @app.route("/oracle")
 def oracle_page():
-    """Staking Oracle 概念頁：CollectIQ 作為質押定價預言機。"""
+    """Staking Oracle concept page: CollectIQ as a collateral-pricing oracle."""
     return render_template("oracle.html")
 
 
 @app.route("/api/oracle/simulate")
 def api_oracle_simulate():
-    """模擬 Oracle 對每張卡的質押參數：verified_price, confidence, LTV, liquidation。"""
+    """Simulate the Oracle's collateral parameters for each card: verified_price, confidence, LTV, liquidation."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "comparison.json")
     if not os.path.exists(path):
         return jsonify({"error": "comparison.json not built yet"})
@@ -1551,18 +1551,18 @@ def api_oracle_simulate():
 
 @app.route("/api-status")
 def api_status_page():
-    """API 驗證頁：逐一打每個端點，確認可用。"""
+    """API verification page: hit each endpoint one by one to confirm availability."""
     return render_template("api_status.html")
 
 
 @app.route("/price-search")
 def price_search_page():
-    """PriceCharting 即時比價搜尋頁。"""
+    """PriceCharting live price-comparison search page."""
     return render_template("price_search.html")
 
 
 def _pricecharting_list(query: str):
-    """回傳 PriceCharting 搜尋結果清單（最多 20 個），每項含 title + url。"""
+    """Return a list of PriceCharting search results (up to 20), each with title + url."""
     import re as _re
     from bs4 import BeautifulSoup as _BS
     import requests as _req
@@ -1612,7 +1612,7 @@ def _pricecharting_list(query: str):
 
 
 def _pricecharting_search_by_url(url: str):
-    """抓 PriceCharting 特定商品頁的各等級價格。"""
+    """Scrape the per-grade prices from a specific PriceCharting product page."""
     import re as _re
     from bs4 import BeautifulSoup as _BS
     import requests as _req
@@ -1668,10 +1668,10 @@ def _pricecharting_search_by_url(url: str):
 
 @app.route("/api/price-search")
 def api_price_search():
-    """搜尋 PriceCharting。
-    必填：?q=關鍵字
-    選填：?grader=PSA|BGS|CGC  ?grade=10|9.5|...
-    回傳：results（候選清單）或直接回傳 prices（唯一匹配）。
+    """Search PriceCharting.
+    Required: ?q=keyword
+    Optional: ?grader=PSA|BGS|CGC  ?grade=10|9.5|...
+    Returns: results (candidate list) or prices directly (on a unique match).
     """
     import re as _re
     from our_price import _grade_label
@@ -1725,9 +1725,9 @@ def api_price_search():
 
 @app.route("/api/price-by-url")
 def api_price_by_url():
-    """抓特定 PriceCharting 商品頁的各等級價格。
-    必填：?url=https://www.pricecharting.com/game/...
-    選填：?grader=PSA  ?grade=10
+    """Scrape the per-grade prices from a specific PriceCharting product page.
+    Required: ?url=https://www.pricecharting.com/game/...
+    Optional: ?grader=PSA  ?grade=10
     """
     from our_price import _grade_label
     url = request.args.get("url", "").strip()
@@ -1766,13 +1766,13 @@ def api_price_by_url():
 
 @app.route("/cdp")
 def cdp_page():
-    """CDP 模擬器頁：互動式選卡 → 即時看到借款額度。"""
+    """CDP simulator page: interactively pick cards -> see the borrowing limit in real time."""
     return render_template("cdp.html")
 
 
 @app.route("/api/cdp/cards")
 def api_cdp_cards():
-    """回傳所有可質押卡片清單（有獨立驗證價的），供 CDP 模擬器選卡。"""
+    """Return the list of all collateralizable cards (those with an independently verified price), for the CDP simulator to pick from."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "comparison.json")
     if not os.path.exists(path):
         return jsonify({"error": "comparison.json not built yet"})
@@ -1813,13 +1813,13 @@ def api_cdp_cards():
 
 @app.route("/rwa-index")
 def rwa_index_page():
-    """RWA 指數頁：按系列 / IP 的價格指數。"""
+    """RWA index page: price indices by set / IP."""
     return render_template("rwa_index.html")
 
 
 @app.route("/api/rwa-index")
 def api_rwa_index():
-    """產出 RWA 指數：按 set_name 分組的價格統計。"""
+    """Produce the RWA index: price statistics grouped by set_name."""
     import sqlite3
     base = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base, "data", "collectiq_core.db")
@@ -1930,16 +1930,16 @@ def api_rwa_index():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  單卡查價站 + 錢包追蹤（對外 renaiss_lookup.html 專用）
+#  Single-card price lookup + wallet tracking (for the public renaiss_lookup.html)
 # ═══════════════════════════════════════════════════════════════════════════════
 @app.route("/api/card-lookup")
 def api_card_lookup():
-    """單張卡「一次查三來源」：貼卡名 → 併排回傳
-      1) independent：PriceCharting（彙整 eBay 成交，有可查證連結）＝有公信力
-      2) renaiss_index：Renaiss 自家指數 FMV（Index API，非獨立第三方）
-      3) renaiss_buyback：Renaiss 平台收購價（來自 pack_content，逐 entry）＋ luck
-    參數：?q=卡名（必填） ?grader=PSA ?grade=10
-    誠信規則同 CLAUDE.md：independent 與 renaiss_index 不可混用，各自標來源。"""
+    """A single card, "three sources in one query": paste a card name -> return side by side
+      1) independent: PriceCharting (aggregated eBay sales, with verifiable links) = credible
+      2) renaiss_index: Renaiss's own index FMV (Index API, not an independent third party)
+      3) renaiss_buyback: Renaiss platform buyback price (from pack_content, per entry) + luck
+    Params: ?q=card_name (required) ?grader=PSA ?grade=10
+    Integrity rule per CLAUDE.md: independent and renaiss_index must not be mixed; label each with its source."""
     from our_price import _grade_label
     q = request.args.get("q", "").strip()
     if not q:
@@ -1950,7 +1950,7 @@ def api_card_lookup():
     out = {"query": q, "grader": grader, "grade": grade,
            "independent": None, "renaiss_index": None, "renaiss_buyback": None}
 
-    # ── 1) 獨立來源：PriceCharting（重用既有 helper）──
+    # ── 1) Independent source: PriceCharting (reuse existing helper) ──
     try:
         import re as _re
         query = q if _re.search(r"\bpokemon\b", q, _re.I) else "pokemon " + q
@@ -1981,7 +1981,7 @@ def api_card_lookup():
     except Exception as e:
         out["independent"] = {"error": f"{type(e).__name__}: {e}"}
 
-    # ── 2) Renaiss 自家指數 FMV（Index API，非獨立）──
+    # ── 2) Renaiss's own index FMV (Index API, not independent) ──
     try:
         hits = renaiss_api.search_cards(q, limit=6)
         out["renaiss_index"] = {
@@ -1993,7 +1993,7 @@ def api_card_lookup():
     except Exception as e:
         out["renaiss_index"] = {"error": f"{type(e).__name__}: {e}"}
 
-    # ── 3) Renaiss 收購價 + luck（pack_content，逐 entry）──
+    # ── 3) Renaiss buyback price + luck (pack_content, per entry) ──
     try:
         conn = _core_db()
         if conn:
@@ -2019,12 +2019,12 @@ def api_card_lookup():
 
 @app.route("/api/wallet/<addr>")
 def api_wallet(addr):
-    """錢包追蹤：給一個地址，回傳它在 Renaiss 生態的動作
-      · pulls   ：從卡機抽出的卡（is_mint=1, to=addr）＋ FMV
-      · received：別的錢包轉進來的卡（is_mint=0, to=addr）
-      · sent    ：轉出去的卡（from=addr）
-      · listings：在市場上架/掛單紀錄（ledger_market，含 list 價）
-    參數：?limit=100"""
+    """Wallet tracking: given an address, return its activity in the Renaiss ecosystem
+      · pulls   : cards pulled from packs (is_mint=1, to=addr) + FMV
+      · received: cards transferred in from other wallets (is_mint=0, to=addr)
+      · sent    : cards transferred out (from=addr)
+      · listings: marketplace listing records (ledger_market, includes list price)
+    Params: ?limit=100"""
     import sqlite3 as _sq
     addr = (addr or "").strip().lower()
     if not addr.startswith("0x") or len(addr) != 42:
@@ -2035,7 +2035,7 @@ def api_wallet(addr):
     out = {"address": addr, "pulls": [], "received": [], "sent": [],
            "listings": [], "summary": {}}
 
-    # onchain_pulls：pulls / received / sent
+    # onchain_pulls: pulls / received / sent
     ocdb = os.path.join(base, "data", "onchain_pulls.db")
     if os.path.exists(ocdb):
         oc = _sq.connect(ocdb); oc.row_factory = _sq.Row
@@ -2048,7 +2048,7 @@ def api_wallet(addr):
         out["pulls"]    = _q("LOWER(to_addr)=? AND is_mint=1", (addr, limit))
         out["received"] = _q("LOWER(to_addr)=? AND is_mint=0", (addr, limit))
         out["sent"]     = _q("LOWER(from_addr)=?", (addr, limit))
-        # 摘要統計（全量，不受 limit 影響）
+        # Summary stats (full dataset, unaffected by limit)
         s = oc.execute(
             """SELECT
                  SUM(CASE WHEN LOWER(to_addr)=? AND is_mint=1 THEN 1 ELSE 0 END) AS n_pulls,
@@ -2062,7 +2062,7 @@ def api_wallet(addr):
                           "received": s["n_recv"] or 0, "sent": s["n_sent"] or 0}
         oc.close()
 
-    # ledger_market：這個地址的上架/掛單（賣卡意圖）
+    # ledger_market: this address's listings (intent to sell)
     conn = _core_db()
     if conn:
         try:
@@ -2080,8 +2080,8 @@ def api_wallet(addr):
     return jsonify(out)
 
 
-# slug → 抽卡池合約（is_mint=1 時 from_addr = 這些池）。與 track_pulls_onchain.py 的
-# GACHA_CONTRACTS 對齊；limited/custody 卡機（World Cup）走金庫託管，鏈上沒有公開池 feed。
+# slug -> gacha pool contract (when is_mint=1, from_addr = these pools). Aligned with
+# track_pulls_onchain.py's GACHA_CONTRACTS; limited/custody packs (World Cup) use vault custody and have no public on-chain pool feed.
 _POOL_BY_SLUG = {
     "omega":          "0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910",
     "eden-pack":      "0xfda4a907d23d9f24271bc47483c5b983831e325e",
@@ -2089,13 +2089,13 @@ _POOL_BY_SLUG = {
 }
 
 
-# 共用 ERC721 NFT 合約（所有卡機的卡都鑄在這）
+# Shared ERC721 NFT contract (all packs' cards are minted here)
 _NFT_CONTRACT = "0xF8646A3Ca093e97Bb404c3b25e675C0394DD5b30"
 _INV_CACHE = {}  # pool -> (ts, balance)
 
 
 def _rpc_nodes():
-    """優先用 BNB_RPC（帶 key，逗號/空白分隔）；沒有就退公用 dataseed。"""
+    """Prefer BNB_RPC (with key, comma/space separated); otherwise fall back to public dataseed nodes."""
     env = os.getenv("BNB_RPC", "").replace(",", " ").split()
     return [r for r in env if r] or [
         "https://bsc-dataseed.binance.org",
@@ -2105,7 +2105,7 @@ def _rpc_nodes():
 
 
 def _pool_inventory(pool_addr, ttl=60):
-    """該卡機池目前在鏈上還握著幾張 NFT（= 現在池裡剩幾張）。快取 60s。"""
+    """How many NFTs this pack's pool still holds on-chain (= how many are left in the pool now). Cached 60s."""
     import requests as _req
     p = pool_addr.lower()
     now = time.time()
@@ -2129,8 +2129,8 @@ def _pool_inventory(pool_addr, ttl=60):
 
 
 def _pool_activity(pool_addr, recent_n=25):
-    """從 onchain_pulls 算單一抽卡池的：總抽數、最近 feed、高價門檻(p99)、
-    高價抽頻率、最長乾旱間隔排行。全部是真實鏈上資料。"""
+    """Compute for a single gacha pool from onchain_pulls: total pulls, recent feed, high-value threshold (p99),
+    high-value pull frequency, and the longest-dry-spell interval leaderboard. All real on-chain data."""
     import sqlite3 as _sq
     base = os.path.dirname(os.path.abspath(__file__))
     ocdb = os.path.join(base, "data", "onchain_pulls.db")
@@ -2143,18 +2143,18 @@ def _pool_activity(pool_addr, recent_n=25):
         "WHERE LOWER(from_addr)=? AND is_mint=1", (p,)).fetchone()
     if not total["n"]:
         oc.close(); return None
-    # 高價門檻：該池 fmv 的 99 百分位（動態、真實）
+    # High-value threshold: the 99th percentile of this pool's fmv (dynamic, real)
     fmvs = [r[0] for r in oc.execute(
         "SELECT market_fmv FROM onchain_pulls WHERE LOWER(from_addr)=? AND is_mint=1 "
         "AND market_fmv IS NOT NULL ORDER BY market_fmv", (p,)).fetchall()]
     hi_thr = fmvs[int(len(fmvs) * 0.99)] if fmvs else 0
     hi_n = sum(1 for v in fmvs if v >= hi_thr) if hi_thr else 0
-    # 全歷史（時間序）供間隔排行；只取必要欄位
+    # Full history (chronological) for the interval leaderboard; only pull necessary columns
     seq = oc.execute(
         "SELECT block_time, market_fmv, card_name, token_id, to_addr, tx_hash "
         "FROM onchain_pulls WHERE LOWER(from_addr)=? AND is_mint=1 "
         "ORDER BY block_number ASC, log_index ASC", (p,)).fetchall()
-    # 最長間隔排行：兩次高價抽之間隔了幾抽
+    # Longest-interval leaderboard: how many pulls elapsed between two high-value pulls
     leaderboard, since = [], 0
     for r in seq:
         since += 1
@@ -2177,9 +2177,9 @@ def _pool_activity(pool_addr, recent_n=25):
 
 @app.route("/api/pack-activity")
 def api_pack_activity():
-    """所有卡機的即時動態：總抽數 / 最近抽卡 feed（含錢包）/ 高價抽頻率 /
-    最長間隔排行。perpetual 池走鏈上真實資料；limited/custody（World Cup）走金庫託管，
-    鏈上沒有公開抽卡 feed，改由 /api/prize-pool 顯示獎池內容。"""
+    """Live activity for all packs: total pulls / recent pull feed (with wallets) / high-value pull frequency /
+    longest-interval leaderboard. Perpetual pools use real on-chain data; limited/custody (World Cup) use vault
+    custody with no public on-chain pull feed, so /api/prize-pool shows their prize-pool contents instead."""
     try:
         packs = renaiss_api.get_packs(include_inactive=False)
     except Exception as e:
@@ -2199,7 +2199,7 @@ def api_pack_activity():
             m["pool_inventory"] = _pool_inventory(pool)
             act = _pool_activity(pool)
             if act:
-                # 用 Renaiss recentOpenedPacks 補上官方 tier（依 token_id 對應到最近 feed）
+                # Fill in the official tier from Renaiss recentOpenedPacks (matched to the recent feed by token_id)
                 try:
                     detail = renaiss_api.get_pack_detail(slug)
                     tiers = {str(o.get("collectibleTokenId")): o.get("tier")
@@ -2215,15 +2215,15 @@ def api_pack_activity():
 
 @app.route("/api/prize-pool")
 def api_prize_pool():
-    """獎池內容一覽（給 limited/custody 卡機，如 World Cup）：pack_content 目錄
-    依價值排序，附 tier / luck / 來源徽章。參數：?slug= 或 ?pack_name= ?limit=200"""
+    """Prize-pool contents overview (for limited/custody packs, e.g. World Cup): the pack_content catalog
+    sorted by value, with tier / luck / source badges. Params: ?slug= or ?pack_name= ?limit=200"""
     slug = (request.args.get("slug") or "").strip()
     pack_name = (request.args.get("pack_name") or "").strip()
     limit = min(int(request.args.get("limit", 200)), 1000)
     conn = _core_db()
     if not conn:
         return jsonify({"error": "尚未建立 collectiq_core.db"}), 503
-    # slug → pack_name（用 Renaiss 目錄名比對）
+    # slug -> pack_name (matched against the Renaiss catalog name)
     if slug and not pack_name:
         try:
             for pk in renaiss_api.get_packs(include_inactive=True):
@@ -2245,7 +2245,7 @@ def api_prize_pool():
                     market_price_usd DESC NULLS LAST
            LIMIT ?""", (pack_name, limit)).fetchall()
     conn.close()
-    # tier 摘要
+    # Tier summary
     summary = {}
     for r in rows:
         summary[r["tier"]] = summary.get(r["tier"], 0) + 1

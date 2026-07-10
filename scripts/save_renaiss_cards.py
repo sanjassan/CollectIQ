@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""儲存 RenaCrypt 卡資料到 SQLite"""
+"""Save RenaCrypt card data to SQLite."""
 import json
 import sqlite3
 from datetime import datetime
@@ -9,7 +9,7 @@ DB_PATH = Path(__file__).parent.parent / "data" / "renaiss_cards.db"
 
 
 def init_db():
-    """初始化 SQLite 資料庫"""
+    """Initialize the SQLite database."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
@@ -31,13 +31,13 @@ def init_db():
 
 
 def load_json(json_path):
-    """從 JSON 檔案載入卡資料"""
+    """Load card data from a JSON file."""
     with open(json_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def save_to_db(conn, cards):
-    """儲存卡到 SQLite"""
+    """Save cards to SQLite."""
     cursor = conn.cursor()
     for card in cards:
         cursor.execute("""
@@ -67,11 +67,11 @@ if __name__ == "__main__":
         print(f"檔案不存在: {json_path}")
         sys.exit(1)
 
-    # 載入 JSON
+    # Load JSON
     cards = load_json(json_path)
     print(f"載入 {len(cards)} 張卡")
 
-    # 儲存到 SQLite
+    # Save to SQLite
     conn = init_db()
     save_to_db(conn, cards)
     conn.close()

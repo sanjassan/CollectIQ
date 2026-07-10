@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Easy EV Monitor v2 - Complete System
-整合: EV 計算、Pack 監控、外部比價 (snkr/pricechart)
-無 Renaiss API 依賴，使用本地 JSON + 外部比價
+Combines: EV calculation, pack monitoring, external price comparison (snkr/pricechart)
+No Renaiss API dependency; uses local JSON + external price comparison
 """
 
 import json

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-從 Renaiss 公開 Marketplace tRPC API 同步卡牌（無需 Wallet 登入）。
+Sync cards from the Renaiss public Marketplace tRPC API (no wallet login required).
 
-資料來源與 renaiss-scanner 相同：
+Same data source as renaiss-scanner:
   https://www.renaiss.xyz/api/trpc/collectible.list
 
-open-monitor (https://open-monitor-rmrm.pages.dev) 則額外做：
-  - 卡池 EV / 鏈上 5s 偵測 / WebSocket（Cloudflare Workers + D1 + Scraper）
-  - /api/packs、/api/recent-pulls 為「抽卡歷史 + 卡池狀態」
+open-monitor (https://open-monitor-rmrm.pages.dev) additionally provides:
+  - pool EV / 5s on-chain detection / WebSocket (Cloudflare Workers + D1 + Scraper)
+  - /api/packs and /api/recent-pulls for "pull history + pool status"
 
-本腳本：Marketplace 在售卡（含 FMV、掛單價、圖片）
-sync_open_monitor.py：抽卡 pulls + 卡池 metadata
-兩者合併 = 完整監控資料面。
+This script: Marketplace listed cards (including FMV, ask price, images).
+sync_open_monitor.py: pulls + pool metadata.
+Combined, the two form the complete monitoring data surface.
 """
 from __future__ import annotations
 
@@ -125,7 +125,7 @@ def main() -> int:
 
     (DATA / "marketplace_listed.json").write_text(json.dumps(listed, indent=2, ensure_ascii=False))
     (DATA / "marketplace_all.json").write_text(json.dumps(all_cards, indent=2, ensure_ascii=False))
-    # 覆寫 pool_data 供 main.py EV 計算（使用 marketplace 價格）
+    # Overwrite pool_data for main.py's EV calculation (using marketplace prices)
     (DATA / "pool_data.json").write_text(json.dumps(all_cards, indent=2, ensure_ascii=False))
 
     print(f"✅ Marketplace 同步：在售 {len(listed)} · 索引 {len(all_cards)}")

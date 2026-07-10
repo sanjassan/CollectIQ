@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""hermes_notify.py — 共用 Telegram 通知（讀 ~/.hermes/.env 憑證）。
+"""hermes_notify.py — shared Telegram notifications (reads credentials from ~/.hermes/.env).
 
-~/.hermes/.env 有 TELEGRAM_BOT_TOKEN 與 TELEGRAM_HOME_CHANNEL（= 使用者本人的 chat id），
-但 main.TelegramAlert 期待 TELEGRAM_CHAT_ID，故此處把 HOME_CHANNEL 映射過去。
+~/.hermes/.env has TELEGRAM_BOT_TOKEN and TELEGRAM_HOME_CHANNEL (= the user's own chat id),
+but main.TelegramAlert expects TELEGRAM_CHAT_ID, so this maps HOME_CHANNEL over to it.
 """
 from __future__ import annotations
 
@@ -26,14 +26,14 @@ def load_env() -> None:
             v = v.strip().strip('"').strip("'")
             if k.startswith("TELEGRAM") and k not in os.environ:
                 os.environ[k] = v
-    # TelegramAlert 用 TELEGRAM_CHAT_ID；沒有就用 HOME_CHANNEL
+    # TelegramAlert uses TELEGRAM_CHAT_ID; fall back to HOME_CHANNEL if it's absent
     if not os.environ.get("TELEGRAM_CHAT_ID") and os.environ.get("TELEGRAM_HOME_CHANNEL"):
         os.environ["TELEGRAM_CHAT_ID"] = os.environ["TELEGRAM_HOME_CHANNEL"]
     _LOADED = True
 
 
 def tg(message: str, image_path: str | None = None) -> bool:
-    """發 Telegram（可帶圖）。回傳是否送出。"""
+    """Send a Telegram message (optionally with an image). Returns whether it was sent."""
     load_env()
     import sys
     ROOT = Path(__file__).resolve().parents[1]

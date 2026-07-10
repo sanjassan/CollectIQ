@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""從 open-monitor API 同步卡池與抽卡紀錄到 v2 本地 data/。"""
+"""Sync pools and pull records from the open-monitor API into the v2 local data/ directory."""
 from __future__ import annotations
 
 import json
@@ -53,8 +53,8 @@ def main() -> int:
                 row["card_url"] = f"https://www.renaiss.xyz/card/{row['token_id']}"
             all_pulls.append(row)
 
-    # 每個 active pack 的「經驗 EV」= 觀察到的抽卡 FMV 平均（不採用對方的 EV 公式，
-    # 只用對方逐張 FMV 的實際抽出分佈），作為官方 platform_ev 的獨立重算對照。
+    # Each active pack's "empirical EV" = average of observed pull FMVs (not using their EV formula,
+    # only the actual pull distribution of their per-card FMVs), as an independent recompute against the official platform_ev.
     import statistics
     pull_fmv: dict[str, list[float]] = {}
     for pull in all_pulls:
@@ -89,11 +89,11 @@ def main() -> int:
             "total_fmv_usd": p.get("total_fmv_usd"),
             "actual_total": p.get("actual_total"),
             "tiers": tiers,
-            # 經驗 EV（從觀察到的抽卡分佈算）
+            # Empirical EV (computed from the observed pull distribution)
             "empirical_ev_usd": round(statistics.mean(fmvs), 2) if fmvs else None,
             "empirical_median_usd": round(statistics.median(fmvs), 2) if fmvs else None,
             "pull_sample_n": len(fmvs),
-            # 限量卡機追蹤訊號
+            # Limited-pool tracking signals
             "last_s_card_name": p.get("last_s_card_name"),
             "last_s_pulled_at": p.get("last_s_pulled_at"),
             "last_s_token_id": p.get("last_s_token_id"),

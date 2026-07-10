@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-Dashboard watchdog —— 定時打 /healthz，掛了就發 Telegram。
+Dashboard watchdog — periodically hits /healthz and sends a Telegram alert if it's down.
 
-dashboard.py 若因當機 / plist 損毀而停擺（就像 06/26 那次 plist 只剩 3 個
-散 key 導致整站 500），沒人會知道。這支腳本由 launchd（ai.renaiss.healthcheck，
-每 300s）獨立於 dashboard 之外運行，主動探測，掛了立即通知。
+If dashboard.py stalls due to a crash or a corrupt plist (like the 06/26 incident where the plist
+had only 3 stray keys left and the whole site returned 500), no one would know. This script runs
+under launchd (ai.renaiss.healthcheck, every 300s) independently of the dashboard, actively probing
+and alerting the moment it goes down.
 
-去抖：狀態存 data/health_state.json，只在「上→下」與「下→上」的邊緣發通知，
-不會每輪都轟炸。連續失敗達 FAIL_THRESHOLD 次才判定為 DOWN，避免單次抖動誤報。
+Debounce: state is stored in data/health_state.json, and alerts fire only on the up→down and down→up
+edges, not every round. DOWN is declared only after FAIL_THRESHOLD consecutive failures, to avoid
+false alarms from a single blip.
 """
 from __future__ import annotations
 
@@ -34,7 +36,7 @@ STATE = DATA / "health_state.json"
 PORT = os.getenv("DASHBOARD_PORT", "8502")
 URL = os.getenv("HEALTHCHECK_URL", f"http://127.0.0.1:{PORT}/healthz")
 TIMEOUT = 10
-FAIL_THRESHOLD = 2   # 連續 N 次失敗才判 DOWN（濾掉單次抖動）
+FAIL_THRESHOLD = 2   # declare DOWN only after N consecutive failures (filters out single blips)
 
 
 def _load_state() -> dict:
@@ -47,12 +49,12 @@ def _load_state() -> dict:
 
 
 def _probe() -> tuple[bool, str]:
-    """回 (healthy, detail)。"""
+    """Return (healthy, detail)."""
     try:
         r = requests.get(URL, timeout=TIMEOUT)
         if r.status_code == 200:
             return True, "200 ok"
-        # 200 以外（含 /healthz 自報 503 degraded）都算不健康
+        # Anything other than 200 (including /healthz self-reporting 503 degraded) counts as unhealthy
         detail = f"HTTP {r.status_code}"
         try:
             detail += f" {json.dumps(r.json(), ensure_ascii=False)}"
