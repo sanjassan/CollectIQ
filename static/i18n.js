@@ -167,7 +167,36 @@
       { en: "of Renaiss prices are within ±30% of the external market.",
         ja: "の Renaiss 価格が外部市場と ±30% 以内。",
         ko: "의 Renaiss 가격이 외부 시장과 ±30% 이내." },
-    "嚴格準確率（±10%）：": { en: "Strict accuracy (±10%): ", ja: "厳密精度（±10%）：", ko: "엄격 정확도(±10%): " }
+    "嚴格準確率（±10%）：": { en: "Strict accuracy (±10%): ", ja: "厳密精度（±10%）：", ko: "엄격 정확도(±10%): " },
+
+    // ---- 價格驗證頁 (compare.html) ----
+    "獨立驗證":     { en: "Independent verification", ja: "独立検証", ko: "독립 검증" },
+    "：我們向 PriceCharting 獨立取得每張鑑定卡的公開成交價，與 Renaiss 官方 FMV 交叉驗證。":
+      { en: ": we independently pull each graded card's public sold price from PriceCharting and cross-check it against Renaiss's official FMV.",
+        ja: "：各鑑定カードの公開取引価格を PriceCharting から独立取得し、Renaiss 公式 FMV と照合します。",
+        ko: ": 각 등급 카드의 공개 체결가를 PriceCharting에서 독립적으로 가져와 Renaiss 공식 FMV와 대조합니다." },
+    "= (外部市場價 − Renaiss FMV) / Renaiss FMV。":
+      { en: "= (external market price − Renaiss FMV) / Renaiss FMV.",
+        ja: "= (外部市場価 − Renaiss FMV) / Renaiss FMV。",
+        ko: "= (외부 시장가 − Renaiss FMV) / Renaiss FMV." },
+    "外面更貴（彩蛋機會）·": { en: "pricier elsewhere (easter egg) ·", ja: "外の方が高い（エッグ）·", ko: "외부가 더 비쌈 (에그) ·" },
+    "外面更便宜 ·": { en: "cheaper elsewhere ·", ja: "外の方が安い ·", ko: "외부가 더 쌈 ·" },
+    "以內。":       { en: "or less.", ja: "以内。", ko: "이내." },
+    "🥚 低估":      { en: "🥚 Underpriced", ja: "🥚 過小評価", ko: "🥚 저평가" },
+    "✅ 相符":      { en: "✅ Match", ja: "✅ 一致", ko: "✅ 일치" },
+    "🥚 低估（彩蛋）": { en: "🥚 Underpriced (egg)", ja: "🥚 過小評価（エッグ）", ko: "🥚 저평가 (에그)" },
+    "⚠️ 偏高":      { en: "⚠️ Overpriced", ja: "⚠️ 高値", ko: "⚠️ 고평가" },
+    "— 未驗證":     { en: "— Unverified", ja: "— 未検証", ko: "— 미검증" },
+    "🔄 鑑定商換算計算機": { en: "🔄 Grader Conversion Calculator", ja: "🔄 鑑定会社換算計算機", ko: "🔄 등급사 환산 계산기" },
+    "同一張卡同分數，任一格輸入價格即時換算。係數：PSA=100%，可在 our_price.py 調整。":
+      { en: "Same card, same grade — type a price in any box for instant conversion. Coefficients: PSA=100%, adjustable in our_price.py.",
+        ja: "同一カード・同一グレード。いずれかの欄に価格を入力すると即時換算。係数：PSA=100%、our_price.py で調整可。",
+        ko: "동일 카드·동일 등급 — 아무 칸에나 가격을 입력하면 즉시 환산. 계수: PSA=100%, our_price.py에서 조정 가능." },
+    "PriceCharting · 獨立": { en: "PriceCharting · independent", ja: "PriceCharting · 独立", ko: "PriceCharting · 독립" },
+    "PriceCharting 彙整 eBay 成交，獨立可查證":
+      { en: "PriceCharting aggregates eBay sales — independent and verifiable",
+        ja: "PriceCharting は eBay 取引を集約、独立して検証可能",
+        ko: "PriceCharting은 eBay 체결을 집계 — 독립적이고 검증 가능" }
   };
 
   // ---- 內插字串（含數字/資料）用 regex pattern 處理 ----
@@ -184,7 +213,19 @@
     { re: /^更新於 (.+)$/,
       en: "Updated $1", ja: "更新 $1", ko: "업데이트 $1" },
     { re: /^(.+ → )市場( \$.+)$/,
-      en: "$1Market$2", ja: "$1市場価$2", ko: "$1시장가$2" }
+      en: "$1Market$2", ja: "$1市場価$2", ko: "$1시장가$2" },
+    // 價格驗證頁 meta（含「部分」字樣）
+    { re: /^(.+) · 共 (\d[\d,]*) 張 · 已驗證 (\d[\d,]*) 張（部分，背景仍在跑） · 低估 (\d[\d,]*) \/ 偏高 (\d[\d,]*) \/ 相符 (\d[\d,]*) \/ 未驗證 (\d[\d,]*)$/,
+      en: "$1 · $2 total · $3 verified (partial, still running) · underpriced $4 / overpriced $5 / match $6 / unverified $7",
+      ja: "$1 · 計 $2 枚 · 検証済 $3 枚（部分・処理中） · 過小評価 $4 / 高値 $5 / 一致 $6 / 未検証 $7",
+      ko: "$1 · 총 $2 장 · 검증 $3 장(부분, 진행 중) · 저평가 $4 / 고평가 $5 / 일치 $6 / 미검증 $7" },
+    // 價格驗證頁 meta（完整）
+    { re: /^(.+) · 共 (\d[\d,]*) 張 · 已驗證 (\d[\d,]*) 張 · 低估 (\d[\d,]*) \/ 偏高 (\d[\d,]*) \/ 相符 (\d[\d,]*) \/ 未驗證 (\d[\d,]*)$/,
+      en: "$1 · $2 total · $3 verified · underpriced $4 / overpriced $5 / match $6 / unverified $7",
+      ja: "$1 · 計 $2 枚 · 検証済 $3 枚 · 過小評価 $4 / 高値 $5 / 一致 $6 / 未検証 $7",
+      ko: "$1 · 총 $2 장 · 검증 $3 장 · 저평가 $4 / 고평가 $5 / 일치 $6 / 미검증 $7" },
+    { re: /^載入失敗：(.+)$/,
+      en: "Load failed: $1", ja: "読み込み失敗：$1", ko: "불러오기 실패: $1" }
   ];
 
   const LANGS = ["zh", "en", "ja", "ko"];
