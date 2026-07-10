@@ -18,6 +18,16 @@
     "外部比價":    { en: "Price Compare",  ja: "外部価格比較",    ko: "외부 시세" },
     "🎰 限量歷史": { en: "🎰 Limited History", ja: "🎰 限定履歴", ko: "🎰 한정 이력" },
 
+    // 瀏覽器分頁標題 <title>
+    "CollectIQ — RWA 價格驗證引擎": { en: "CollectIQ — RWA Price Verification Engine", ja: "CollectIQ — RWA 価格検証エンジン", ko: "CollectIQ — RWA 가격 검증 엔진" },
+    "價格驗證 — CollectIQ": { en: "Price Verification — CollectIQ", ja: "価格検証 — CollectIQ", ko: "가격 검증 — CollectIQ" },
+    "CollectIQ · CDP 模擬器": { en: "CollectIQ · CDP Simulator", ja: "CollectIQ · CDP シミュレーター", ko: "CollectIQ · CDP 시뮬레이터" },
+    "CollectIQ · RWA 指數": { en: "CollectIQ · RWA Index", ja: "CollectIQ · RWA 指数", ko: "CollectIQ · RWA 지수" },
+    "Renaiss 鏈上持有 · 卡片 / 存放位置": { en: "Renaiss On-chain Holdings · Cards / Location", ja: "Renaiss オンチェーン保有 · カード / 保管場所", ko: "Renaiss 온체인 보유 · 카드 / 위치" },
+    "CollectIQ — 限量卡機歷史": { en: "CollectIQ — Limited Pack History", ja: "CollectIQ — 限定パック履歴", ko: "CollectIQ — 한정 팩 이력" },
+    "外部比價搜尋 — CollectIQ": { en: "External Price Search — CollectIQ", ja: "外部価格検索 — CollectIQ", ko: "외부 가격 검색 — CollectIQ" },
+    "API 狀態 — CollectIQ": { en: "API Status — CollectIQ", ja: "APIステータス — CollectIQ", ko: "API 상태 — CollectIQ" },
+
     // 頁面標題 / hero heading
     "CDP 質押模擬器":   { en: "CDP Collateral Simulator", ja: "CDP 担保シミュレーター", ko: "CDP 담보 시뮬레이터" },
     "RWA 收藏品指數":   { en: "RWA Collectibles Index",   ja: "RWA コレクション指数",   ko: "RWA 수집품 지수" },
@@ -596,6 +606,8 @@
 
   function apply(lang) {
     document.documentElement.setAttribute("lang", HTML_LANG[lang] || "zh-Hant");
+    const titleEl = document.querySelector("title");
+    if (titleEl && titleEl.firstChild) translateNode(titleEl.firstChild, lang);
     walk(document.body, lang);
     document.querySelectorAll("#ciq-lang button").forEach((b) => {
       b.classList.toggle("active", b.dataset.lang === lang);
