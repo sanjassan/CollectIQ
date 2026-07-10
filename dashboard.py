@@ -2017,6 +2017,44 @@ def api_card_lookup():
     return jsonify(out)
 
 
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    """Card chatbot: grounded Q&A about any card (price drivers, selling points).
+
+    Body: {message, token_id?, card_name?, history?}. Uses a Qwen3-VL model
+    when reachable, otherwise returns a grounded fact-based answer."""
+    from scripts import card_chat
+    body = request.get_json(silent=True) or {}
+    message = (body.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+    history = body.get("history")
+    if isinstance(history, list):
+        history = [h for h in history if isinstance(h, dict)
+                   and h.get("role") in ("user", "assistant") and h.get("content")][-6:]
+    else:
+        history = None
+    try:
+        result = card_chat.answer(
+            message,
+            token_id=(body.get("token_id") or None),
+            card_name=(body.get("card_name") or None),
+            history=history,
+        )
+        return jsonify(result)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": f"{type(e).__name__}: {e}",
+                        "answer": "Sorry, the assistant hit an unexpected error.",
+                        "sources": [], "llm_online": False}), 200
+
+
+@app.route("/api/chat/health")
+def api_chat_health():
+    """Reachability of the chat LLM + size of the card snapshot."""
+    from scripts import card_chat
+    return jsonify(card_chat.health())
+
+
 @app.route("/api/wallet/<addr>")
 def api_wallet(addr):
     """Wallet tracking: given an address, return its activity in the Renaiss ecosystem
