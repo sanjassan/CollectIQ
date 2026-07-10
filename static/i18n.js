@@ -1,7 +1,7 @@
 /* CollectIQ 前端多國語言（zh-Hant 原文 → en / ja / ko）
  * 作法：以「原始繁中文字」為 key 翻譯 leaf text node，配合 MutationObserver
  * 涵蓋 JS 動態渲染的內容。資料值（卡名、價格）不在字典內 → 原樣保留。
- * 語言存 localStorage('collectiq_lang')，預設 zh。
+ * 語言存 localStorage('collectiq_lang')，未選過時預設 en（英文）。
  */
 (function () {
   "use strict";
@@ -532,7 +532,7 @@
 
   function getLang() {
     const l = localStorage.getItem("collectiq_lang");
-    return LANGS.indexOf(l) >= 0 ? l : "zh";
+    return LANGS.indexOf(l) >= 0 ? l : "en";
   }
   function setLang(l) { localStorage.setItem("collectiq_lang", l); }
 
