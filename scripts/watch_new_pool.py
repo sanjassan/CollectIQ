@@ -41,14 +41,43 @@ TRANSFER_TOPIC = None  # 延後算（需 web3）
 ZERO = "0x0000000000000000000000000000000000000000"
 
 
-def fetch_packs() -> list[dict]:
+REST_PACKS = "https://api.renaiss.xyz/v0/packs"  # 備援：tRPC 500 時改打這支 REST
+_HDRS = {"accept": "application/json", "user-agent": "Mozilla/5.0"}
+
+
+def _fetch_trpc() -> list[dict]:
     import urllib.parse
     inp = urllib.parse.quote(json.dumps({"0": {"json": {"includeInactive": True}}}))
-    r = requests.get(f"{TRPC}?batch=1&input={inp}",
-                     headers={"accept": "application/json", "user-agent": "Mozilla/5.0"},
-                     timeout=30)
+    r = requests.get(f"{TRPC}?batch=1&input={inp}", headers=_HDRS, timeout=30)
     r.raise_for_status()
     return r.json()[0]["result"]["data"]["json"]["cardPacks"]
+
+
+def _fetch_rest() -> list[dict]:
+    """備援來源：REST v0/packs 回傳同樣的原始欄位（packType/stage/priceInUsdt/
+    expectedValueInUsd）。缺點：activeFrom 可能為 None（main() 會用快取回填）。"""
+    r = requests.get(REST_PACKS, params={"includeInactive": "true"}, headers=_HDRS, timeout=30)
+    r.raise_for_status()
+    return r.json().get("cardPacks", [])
+
+
+def fetch_packs() -> list[dict]:
+    """先重試 tRPC（開抽瞬間偶回 500），連續失敗才 fallback 到 REST，兩者都掛才拋。"""
+    last = None
+    for attempt in range(3):
+        try:
+            return _fetch_trpc()
+        except Exception as e:
+            last = e
+            if attempt < 2:
+                time.sleep(3 * (attempt + 1))
+    # tRPC 3 次全敗 → 改用 REST 備援，避免整輪空掃/漏接開抽
+    try:
+        packs = _fetch_rest()
+        print(f"  ⚠️ tRPC getAll 失敗（{type(last).__name__}），已改用 REST 備援（{len(packs)} 台）")
+        return packs
+    except Exception as e2:
+        raise RuntimeError(f"tRPC 與 REST 皆失敗：trpc={last!r} rest={e2!r}")
 
 
 KNOWN_POOLS = {
@@ -327,6 +356,9 @@ def main() -> int:
             and p.get("stage") not in ("archived",)]
     for p in live:
         slug = (p.get("name") or "").lower().replace(" ", "-")
+        # REST 備援缺 activeFrom → 用上輪快取回填，開抽窗口判斷才不會失效
+        if not p.get("activeFrom") and (prev.get(slug) or {}).get("active_from"):
+            p["activeFrom"] = prev[slug]["active_from"]
         af = _parse_iso(p.get("activeFrom"))
         # 開抽窗口：activeFrom 前 30 分 ~ 之後 14 天，才掃鏈（避免空掃）
         in_window = af is not None and (af - now).total_seconds() <= 1800 \
