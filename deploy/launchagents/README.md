@@ -1,22 +1,27 @@
-# launchd 排程備份（macOS）
+# launchd job backups (macOS)
 
-此資料夾是 `~/Library/LaunchAgents/` 裡所有 `ai.renaiss.*` / `com.renaiss.*`
-job 的版控備份。真正跑的是 `~/Library/LaunchAgents/` 下的檔案，這裡只是還原用副本。
+This folder is a version-controlled backup of every `ai.renaiss.*` /
+`com.renaiss.*` job in `~/Library/LaunchAgents/`. The jobs that actually run
+live under `~/Library/LaunchAgents/`; these are restore copies only.
 
-## ⚠️ 已脫敏欄位
-`ai.renaiss.onchain.plist` 與 `ai.renaiss.livepool.plist` 的 `BNB_RPC`（帶 key 的
-BSC RPC 節點）已被替換為 `__SET_BNB_RPC_COMMA_SEPARATED__`。**還原後必須手動填回**
-真實的逗號分隔節點清單，否則鏈上同步會退化成公共節點（慢、易被限流）。
+## Redacted fields
 
-## 還原 / 安裝
+The `BNB_RPC` value (keyed BSC RPC nodes) in `ai.renaiss.onchain.plist` and
+`ai.renaiss.livepool.plist` is replaced with
+`__SET_BNB_RPC_COMMA_SEPARATED__`. After restoring, set it back to your real
+comma-separated node list; otherwise on-chain sync falls back to public nodes,
+which are slower and more rate-limited.
+
+## Restore / Install
+
 ```bash
-# 1) 複製到 LaunchAgents（記得先把上面兩支的 BNB_RPC 填回）
+# 1) Copy into LaunchAgents (set BNB_RPC back on the two files above first)
 cp deploy/launchagents/ai.renaiss.*.plist  ~/Library/LaunchAgents/
 cp deploy/launchagents/com.renaiss.*.plist ~/Library/LaunchAgents/
 
-# 2) 載入（單一 job）
+# 2) Load a single job
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.renaiss.healthcheck.plist
 
-# 3) 立即觸發一次 / 重啟
+# 3) Trigger once / restart
 launchctl kickstart -k gui/$(id -u)/ai.renaiss.healthcheck
 ```

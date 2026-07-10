@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Renaiss 內外比價（我們自抓的外部公開市場價 vs Renaiss FMV）
-     每 6 小時跑一次 build_comparison.py；our_price.py 有 24h 快取，
-     所以單次只重抓過期的卡，不會狂打 PriceCharting。
-     產出 data/comparison.json 供 dashboard /compare 頁使用。 -->
+<!-- Renaiss vs. external price comparison (our independently-scraped public
+     market price vs Renaiss FMV). Runs build_comparison.py every 6 hours;
+     our_price.py has a 24h cache, so each run only refreshes stale cards and
+     does not hammer PriceCharting. Produces data/comparison.json for the
+     dashboard /compare page. -->
 <plist version="1.0">
 <dict>
   <key>Label</key>

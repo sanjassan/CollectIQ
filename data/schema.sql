@@ -1,5 +1,5 @@
--- RenaCrypt 卡庫 SQLite schema
--- 資料庫: data/renaiss_cards.db
+-- Card catalog SQLite schema
+-- Database: data/renaiss_cards.db
 
 CREATE TABLE IF NOT EXISTS cards (
     id TEXT PRIMARY KEY,
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS cards (
     updated_at TEXT DEFAULT (datetime('now'))
 );
 
--- 建立索引
+-- Indexes
 CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name);
 CREATE INDEX IF NOT EXISTS idx_cards_rarity ON cards(rarity);
 CREATE INDEX IF NOT EXISTS idx_cards_price ON cards(price);

@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- 新限量卡機卡池捕捉：每 15 分掃一次。平時只查 Renaiss API（便宜），
-     進入開抽窗口（activeFrom 前 30 分起）才做鏈上探測 + 卡池錢包分析。
-     抓到新卡池上鏈時發 Telegram。需 anaconda python（含 web3）。 -->
+<!-- New limited-pack pool capture: scans every 15 minutes. Normally only
+     queries the Renaiss API (cheap); only during the open window (from 30 min
+     before activeFrom) does it run on-chain probing + pool-wallet analysis.
+     Sends a Telegram alert when a new pool appears on-chain. Requires the
+     anaconda python (with web3). -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
