@@ -142,8 +142,50 @@
     "✅ 相符":  { en: "✅ Match",  ja: "✅ 一致",   ko: "✅ 일치" },
     "❌ 失敗":  { en: "❌ Fail",   ja: "❌ 失敗",   ko: "❌ 실패" },
     "抽出":     { en: "Pulled",   ja: "抽選",     ko: "뽑음" },
-    "未識別":   { en: "Unknown",  ja: "未識別",   ko: "미식별" }
+    "未識別":   { en: "Unknown",  ja: "未識別",   ko: "미식별" },
+
+    // ── 首頁 index / 總覽 ──
+    "Renaiss 平台定價可信度": { en: "Renaiss Pricing Trust", ja: "Renaiss 価格の信頼度", ko: "Renaiss 가격 신뢰도" },
+    "監控卡片數":   { en: "Cards Tracked",    ja: "監視カード数",   ko: "추적 카드 수" },
+    "已驗證覆蓋率": { en: "Verified Coverage", ja: "検証カバレッジ", ko: "검증 커버리지" },
+    "彩蛋機會":     { en: "Easter Eggs",      ja: "イースターエッグ", ko: "이스터에그" },
+    "偏高警告":     { en: "Overpriced Warn",  ja: "高値警告",       ko: "고평가 경고" },
+    "監控總市值":   { en: "Total Market Cap", ja: "総時価総額",     ko: "총 시가총액" },
+    "📊 定價分佈":  { en: "📊 Price Distribution", ja: "📊 価格分布", ko: "📊 가격 분포" },
+    "低估（彩蛋）": { en: "Underpriced (egg)", ja: "過小評価（エッグ）", ko: "저평가 (에그)" },
+    "相符 ±10%":    { en: "Match ±10%", ja: "一致 ±10%", ko: "일치 ±10%" },
+    "偏高":         { en: "Overpriced", ja: "高値",     ko: "고평가" },
+    "偏高（>10%）": { en: "Overpriced (>10%)", ja: "高値（>10%）", ko: "고평가 (>10%)" },
+    "未驗證":       { en: "Unverified", ja: "未検証",   ko: "미검증" },
+    "🥚 Top 彩蛋排行": { en: "🥚 Top Easter Eggs", ja: "🥚 トップ・イースターエッグ", ko: "🥚 톱 이스터에그" },
+    "Renaiss 低估最多": { en: "Renaiss most underpriced", ja: "Renaiss 過小評価トップ", ko: "Renaiss 최다 저평가" },
+    "官方EV":       { en: "Official EV", ja: "公式EV",  ko: "공식 EV" },
+    "官方 EV":      { en: "Official EV", ja: "公式EV",  ko: "공식 EV" },
+    "在":           { en: "In",  ja: "うち",  ko: "총" },
+    "張已驗證的卡片中，": { en: "verified cards, of which", ja: "枚の検証済みカードのうち、", ko: "개의 검증된 카드 중," },
+    "的 Renaiss 定價與外部市場價差在 ±30% 以內。":
+      { en: "of Renaiss prices are within ±30% of the external market.",
+        ja: "の Renaiss 価格が外部市場と ±30% 以内。",
+        ko: "의 Renaiss 가격이 외부 시장과 ±30% 이내." },
+    "嚴格準確率（±10%）：": { en: "Strict accuracy (±10%): ", ja: "厳密精度（±10%）：", ko: "엄격 정확도(±10%): " }
   };
+
+  // ---- 內插字串（含數字/資料）用 regex pattern 處理 ----
+  // 每筆：re + 各語言 replacement（用 $1..$n 帶入 capture group）
+  const PATTERNS = [
+    { re: /^(\d[\d,]*) 系列 · (\d[\d,]*) 張 · (\d[\d,]*) 已驗證$/,
+      en: "$1 sets · $2 cards · $3 verified", ja: "$1 シリーズ · $2 枚 · $3 検証済み", ko: "$1 시리즈 · $2 장 · $3 검증됨" },
+    { re: /^\((\d[\d,]*) 張可質押\)$/,
+      en: "($1 pledgeable)", ja: "($1 枚担保可)", ko: "($1 장 담보 가능)" },
+    { re: /^資料更新：(.+)$/,
+      en: "Updated: $1", ja: "更新: $1", ko: "업데이트: $1" },
+    { re: /^潛在價差 (\$.+)$/,
+      en: "Potential gap $1", ja: "潜在価格差 $1", ko: "잠재 가격차 $1" },
+    { re: /^更新於 (.+)$/,
+      en: "Updated $1", ja: "更新 $1", ko: "업데이트 $1" },
+    { re: /^(.+ → )市場( \$.+)$/,
+      en: "$1Market$2", ja: "$1市場価$2", ko: "$1시장가$2" }
+  ];
 
   const LANGS = ["zh", "en", "ja", "ko"];
   const HTML_LANG = { zh: "zh-Hant", en: "en", ja: "ja", ko: "ko" };
@@ -178,9 +220,16 @@
     const entry = DICT[key];
     if (entry && entry[lang]) {
       node.nodeValue = reWhitespace(orig, entry[lang]);
-    } else if (node.nodeValue !== orig) {
-      node.nodeValue = orig;           // 無翻譯 → 保留原文
+      return;
     }
+    for (let i = 0; i < PATTERNS.length; i++) {
+      const p = PATTERNS[i];
+      if (p[lang] && p.re.test(key)) {
+        node.nodeValue = reWhitespace(orig, key.replace(p.re, p[lang]));
+        return;
+      }
+    }
+    if (node.nodeValue !== orig) node.nodeValue = orig; // 無翻譯 → 保留原文
   }
 
   function translateAttr(el, attr, cacheKey, lang) {
