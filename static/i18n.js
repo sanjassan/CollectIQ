@@ -311,7 +311,14 @@
     "可質押價值": { en: "Pledgeable Value", ja: "担保可能額", ko: "담보 가능 가치" },
     "🟢 高": { en: "🟢 High", ja: "🟢 高", ko: "🟢 높음" },
     "🟡 中": { en: "🟡 Medium", ja: "🟡 中", ko: "🟡 중간" },
-    "🔴 低": { en: "🔴 Low", ja: "🔴 低", ko: "🔴 낮음" }
+    "🔴 低": { en: "🔴 Low", ja: "🔴 低", ko: "🔴 낮음" },
+
+    // ---- 鏈上持有頁 (holdings.html) ----
+    "搜尋卡名 / 持有者地址…": { en: "Search card name / holder address…", ja: "カード名 / 保有者アドレス検索…", ko: "카드명 / 보유자 주소 검색…" },
+    "FMV 高→低":   { en: "FMV high→low", ja: "FMV 高→低", ko: "FMV 높음→낮음" },
+    "最近轉移":     { en: "Recently transferred", ja: "直近の移転", ko: "최근 이전" },
+    "無圖片":       { en: "No image", ja: "画像なし", ko: "이미지 없음" },
+    "📍 存放位置：": { en: "📍 Location: ", ja: "📍 保管場所：", ko: "📍 보관 위치: " }
   };
 
   // ---- 內插字串（含數字/資料）用 regex pattern 處理 ----
@@ -350,6 +357,11 @@
       en: "$1/$2 tokens checked for real market price ｜ avg Renaiss FMV gap $3 ｜ updated $4",
       ja: "$1/$2 枚の実市場価を照会 ｜ 平均 Renaiss FMV 乖離 $3 ｜ 更新 $4",
       ko: "$1/$2 개 실시장가 조회 ｜ 평균 Renaiss FMV 격차 $3 ｜ 업데이트 $4" },
+    // 鏈上持有頁 meta
+    { re: /^共 (\d[\d,]*) 張 token ｜ 已識別 (\d[\d,]*) ｜ 有圖 (\d[\d,]*) ｜ 更新於 (.+?) UTC ｜ to_addr = 鏈上當前存放位置$/,
+      en: "$1 tokens ｜ identified $2 ｜ with image $3 ｜ updated $4 UTC ｜ to_addr = current on-chain location",
+      ja: "計 $1 token ｜ 識別済 $2 ｜ 画像あり $3 ｜ 更新 $4 UTC ｜ to_addr = オンチェーン現在地",
+      ko: "총 $1 token ｜ 식별 $2 ｜ 이미지 $3 ｜ 업데이트 $4 UTC ｜ to_addr = 온체인 현재 위치" },
     // Oracle 頁 hero（跨行）
     { re: /^社會能運作，是因為貨幣有公認的價值。[\s\S]*而是$/,
       en: "Society works because money has an agreed-upon value. For a card to become a pledgeable, lendable on-chain soft currency, what's needed isn't more features — it's ",
