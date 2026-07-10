@@ -175,6 +175,7 @@
 
     // ---- 價格驗證頁 (compare.html) ----
     "獨立驗證":     { en: "Independent verification", ja: "独立検証", ko: "독립 검증" },
+    "±10% 以內。": { en: "within ±10%.", ja: "±10% 以内。", ko: "±10% 이내." },
     "：我們向 PriceCharting 獨立取得每張鑑定卡的公開成交價，與 Renaiss 官方 FMV 交叉驗證。":
       { en: ": we independently pull each graded card's public sold price from PriceCharting and cross-check it against Renaiss's official FMV.",
         ja: "：各鑑定カードの公開取引価格を PriceCharting から独立取得し、Renaiss 公式 FMV と照合します。",
@@ -449,6 +450,22 @@
       en: "$1/$2 tokens checked for real market price ｜ avg Renaiss FMV gap $3 ｜ updated $4",
       ja: "$1/$2 枚の実市場価を照会 ｜ 平均 Renaiss FMV 乖離 $3 ｜ 更新 $4",
       ko: "$1/$2 개 실시장가 조회 ｜ 평균 Renaiss FMV 격차 $3 ｜ 업데이트 $4" },
+    { re: /^📊 (\d[\d,]*)\/(\d[\d,]*) 已查 \(([\d.]+)%\) · (\d[\d,]*) 枚有真實市價$/,
+      en: "📊 $1/$2 queried ($3%) · $4 with real market price",
+      ja: "📊 $1/$2 照会済 ($3%) · $4 件が実市場価あり",
+      ko: "📊 $1/$2 조회 ($3%) · $4 개 실시장가 보유" },
+    { re: /^下次: 每日 08:10 台灣時間 · 每日 95 筆 · 約 (.+?) 天完成 · 配額重置於 (.+)$/,
+      en: "Next: daily 08:10 TW · 95/day · ~$1 days to finish · quota resets $2",
+      ja: "次回: 毎日 08:10 台湾時間 · 毎日 95 件 · 約 $1 日で完了 · 割当リセット $2",
+      ko: "다음: 매일 08:10 대만시간 · 매일 95건 · 약 $1일 완료 · 할당 리셋 $2" },
+    { re: /^下次: 每日 08:10 台灣時間 · 每日 95 筆 · 約 (.+?) 天完成$/,
+      en: "Next: daily 08:10 TW · 95/day · ~$1 days to finish",
+      ja: "次回: 毎日 08:10 台湾時間 · 毎日 95 件 · 約 $1 日で完了",
+      ko: "다음: 매일 08:10 대만시간 · 매일 95건 · 약 $1일 완료" },
+    { re: /^⚙️ 建置中 (\d[\d,]*)\/(\d[\d,]*) \(([\d.]+)%\)$/,
+      en: "⚙️ Building $1/$2 ($3%)", ja: "⚙️ 構築中 $1/$2 ($3%)", ko: "⚙️ 구축 중 $1/$2 ($3%)" },
+    { re: /^每日 95 筆配額，約 (.+?) 天完成$/,
+      en: "95/day quota, ~$1 days to finish", ja: "毎日 95 件の割当、約 $1 日で完了", ko: "매일 95건 할당, 약 $1일 완료" },
     // API 狀態頁
     { re: /^共 (\d[\d,]*) 張掛單$/, en: "$1 listings", ja: "$1 件の出品", ko: "$1 개 등록" },
     { re: /^，共 (\d[\d,]*) 筆$/, en: ", $1 results", ja: "、$1 件", ko: ", $1 건" },
@@ -469,6 +486,9 @@
       en: "External market price ($1)", ja: "外部市場価（$1）", ko: "외부 시장가 ($1)" },
     { re: /^❌ 連線失敗：(.+)$/,
       en: "❌ Connection failed: $1", ja: "❌ 接続失敗：$1", ko: "❌ 연결 실패: $1" },
+    // 價格驗證頁 (compare.html) 動態
+    { re: /^🔄 PSA (\$[\d,.]+) × (.+) 換算$/,
+      en: "🔄 PSA $1 × $2 conversion", ja: "🔄 PSA $1 × $2 換算", ko: "🔄 PSA $1 × $2 환산" },
     // Live Pool 頁
     { re: /^更新於 (.+?) · 掃到區塊 (.+)$/,
       en: "Updated $1 · scanned to block $2", ja: "更新 $1 · ブロック $2 まで走査", ko: "업데이트 $1 · 블록 $2 까지 스캔" },
@@ -483,6 +503,7 @@
       en: "$1 tokens ｜ identified $2 ｜ with image $3 ｜ updated $4 UTC ｜ to_addr = current on-chain location",
       ja: "計 $1 token ｜ 識別済 $2 ｜ 画像あり $3 ｜ 更新 $4 UTC ｜ to_addr = オンチェーン現在地",
       ko: "총 $1 token ｜ 식별 $2 ｜ 이미지 $3 ｜ 업데이트 $4 UTC ｜ to_addr = 온체인 현재 위치" },
+    { re: /^未知卡片 #(\d+)(…?)$/, en: "Unknown card #$1$2", ja: "不明なカード #$1$2", ko: "알 수 없는 카드 #$1$2" },
     // Oracle 頁 hero（跨行）
     { re: /^社會能運作，是因為貨幣有公認的價值。[\s\S]*而是$/,
       en: "Society works because money has an agreed-upon value. For a card to become a pledgeable, lendable on-chain soft currency, what's needed isn't more features — it's ",
